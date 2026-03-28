@@ -61,7 +61,7 @@ export default function Home() {
             {/* Nav Links */}
             <div className="hidden md:flex items-center gap-1 text-sm font-medium text-muted-foreground">
               <Link
-                href="#"
+                href="/"
                 className="px-3 py-2 hover:text-foreground transition-colors rounded-md hover:bg-white/5"
               >
                 Home
@@ -74,13 +74,14 @@ export default function Home() {
                 <ChevronDown className="ml-1 w-4 h-4 opacity-70 group-hover:opacity-100 transition-opacity" />
               </Link>
               <Link
-                href="#"
-                className="px-3 py-2 hover:text-foreground transition-colors rounded-md hover:bg-white/5"
+                href="/dashboard"
+                className="px-3 py-2 text-blue-400 hover:text-blue-300 transition-colors rounded-md hover:bg-white/5 flex items-center gap-2"
               >
-                Simulation
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                Live Dashboard
               </Link>
               <Link
-                href="#"
+                href="mailto:contact@verge.city"
                 className="px-3 py-2 hover:text-foreground transition-colors rounded-md hover:bg-white/5"
               >
                 Contact us
@@ -89,10 +90,10 @@ export default function Home() {
           </div>
 
           <Link
-            href="#"
-            className="bg-foreground text-background px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity"
+            href="/dashboard"
+            className="bg-white text-black px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/90 transition-colors shadow-[0_0_15px_rgba(255,255,255,0.2)]"
           >
-            Sign In
+            Launch System
           </Link>
         </nav>
 
@@ -144,11 +145,9 @@ export default function Home() {
           </motion.p>
 
           {/* CTA Button */}
-          <motion.button
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.98 }}
             transition={{
               type: "spring",
               stiffness: 400,
@@ -156,10 +155,21 @@ export default function Home() {
               duration: 0.6,
               delay: 0.3,
             }}
-            className="bg-foreground text-background rounded-full px-8 py-3.5 text-base font-medium pointer-events-auto shadow-[0_0_40px_-10px_rgba(255,255,255,0.3)] hover:shadow-[0_0_60px_-10px_rgba(255,255,255,0.4)] transition-shadow"
+            className="flex gap-4 pointer-events-auto"
           >
-            View Live Dashboard
-          </motion.button>
+            <Link
+              href="/dashboard"
+              className="bg-foreground text-background rounded-full px-8 py-3.5 text-base font-medium shadow-[0_0_40px_-10px_rgba(255,255,255,0.3)] hover:shadow-[0_0_60px_-10px_rgba(255,255,255,0.4)] transition-all hover:scale-105 active:scale-95"
+            >
+              View Live Dashboard
+            </Link>
+            <Link
+              href="#"
+              className="bg-white/10 hover:bg-white/20 text-foreground rounded-full px-8 py-3.5 text-base font-medium transition-all hover:scale-105 active:scale-95 backdrop-blur-md"
+            >
+              Learn More
+            </Link>
+          </motion.div>
         </motion.div>
 
         {/* Dashboard + Video Area */}
