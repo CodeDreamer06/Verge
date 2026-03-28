@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 
 import VergeTab from "@/components/tabs/VergeTab";
 import IncidentsTab from "@/components/tabs/IncidentsTab";
+import ParkingTab from "@/components/tabs/ParkingTab";
 import ReportsTab from "@/components/tabs/ReportsTab";
 import StatsTab from "@/components/tabs/StatsTab";
 import SettingsTab from "@/components/tabs/SettingsTab";
@@ -59,7 +60,7 @@ export default function Dashboard() {
 
           {/* Tabs */}
           <nav className="flex items-center gap-2 text-sm font-medium overflow-x-auto whitespace-nowrap hide-scrollbar">
-            {["Verge", "Incidents", "Reports", "Stats", "Settings"].map((tab) => (
+            {["Verge", "Incidents", "Parking", "Reports", "Stats", "Settings"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -110,6 +111,7 @@ export default function Dashboard() {
         <AnimatePresence mode="wait">
           {activeTab === "Verge" && <VergeTab key="verge" />}
           {activeTab === "Incidents" && <IncidentsTab key="incidents" />}
+          {activeTab === "Parking" && <ParkingTab key="parking" />}
           {activeTab === "Reports" && <ReportsTab key="reports" />}
           {activeTab === "Stats" && <StatsTab key="stats" />}
           {activeTab === "Settings" && <SettingsTab key="settings" />}
