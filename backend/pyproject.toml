@@ -5,6 +5,7 @@ description = "CLI traffic detection and signal balancing for Verge."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "clip",
   "fastapi>=0.116.0",
   "lap>=0.5.12",
   "numpy>=2.0.0",
@@ -33,3 +34,6 @@ packages = ["app/traffic_monitor"]
 [tool.pytest.ini_options]
 pythonpath = ["app"]
 testpaths = ["tests"]
+
+[tool.uv.sources]
+clip = { git = "https://github.com/ultralytics/CLIP.git" }
