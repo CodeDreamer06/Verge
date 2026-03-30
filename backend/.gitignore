@@ -7,3 +7,4 @@ outputs/
 assets/test_inputs/
 assets/*.mp4
 uploads/
+assets/models/plate_detection.pt

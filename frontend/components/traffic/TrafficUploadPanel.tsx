@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertTriangle, CheckCircle2, LoaderCircle, MapPin, Video, Upload, Activity, Zap, Siren, Target, BarChart3, Clock, ShieldAlert } from "lucide-react";
+import type { ViolationRecord } from "@/lib/data";
 
 type EmergencyEvent = {
   label: string;
@@ -38,6 +39,7 @@ type AnalysisResponse = {
   emergency_model_path: string;
   cycle_time_seconds: number;
   summary_url: string;
+  incidents: ViolationRecord[];
   recommended_green_times_seconds: Record<string, number>;
   priority_mode: "balanced" | "emergency_override";
   priority_view: string | null;
@@ -53,6 +55,7 @@ const VIDEO_SLOTS = [
 ] as const;
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_TRAFFIC_API_URL ?? "http://127.0.0.1:8000";
+const INCIDENTS_STORAGE_KEY = "verge-active-incidents";
 const PLAYBACK_SPEEDS = [1, 2, 3, 5] as const;
 const PROCESSING_STEPS = [
   {
@@ -246,7 +249,10 @@ export default function TrafficUploadPanel() {
       if (!response.ok) {
         throw new Error("detail" in payload ? payload.detail || "Analysis failed." : "Analysis failed.");
       }
-      setResult(payload as AnalysisResponse);
+      const analysis = payload as AnalysisResponse;
+      setResult(analysis);
+      window.localStorage.setItem(INCIDENTS_STORAGE_KEY, JSON.stringify(analysis.incidents ?? []));
+      window.dispatchEvent(new Event("verge-incidents-updated"));
       setSimulationSeconds(0);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Analysis failed.");

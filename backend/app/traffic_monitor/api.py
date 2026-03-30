@@ -12,8 +12,8 @@ from .config import OUTPUTS_DIR, UPLOADS_DIR
 from .detector import analyze_videos, cleanup_paths
 
 MAX_UPLOADS = 4
-FAST_API_FRAME_STRIDE = 120
-FAST_API_EMERGENCY_FRAME_STRIDE = 360
+FAST_API_FRAME_STRIDE = 6
+FAST_API_EMERGENCY_FRAME_STRIDE = 24
 FAST_API_INFERENCE_SIZE = 416
 
 app = FastAPI(title="Verge Traffic API", version="0.1.0")
@@ -77,7 +77,7 @@ async def analyze(
             max_green=max_green,
             save_annotated=True,
             inference_size=FAST_API_INFERENCE_SIZE,
-            use_tracking=False,
+            use_tracking=True,
         )
     except Exception as exc:
         cleanup_paths([upload_dir, output_dir])
@@ -112,6 +112,7 @@ def _serialize_result(request: Request, run_id: str, result: dict) -> dict:
         "emergency_model_path": result["emergency_model_path"],
         "cycle_time_seconds": result["cycle_time_seconds"],
         "summary_url": f"{base_url}/outputs/{run_id}/traffic_summary.json",
+        "incidents": result["incidents"],
         "recommended_green_times_seconds": result["recommended_green_times_seconds"],
         "priority_mode": result["priority_mode"],
         "priority_view": result["priority_view"],

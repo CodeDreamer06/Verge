@@ -8,6 +8,25 @@ import {
   Zap,
 } from "lucide-react";
 
+export type IncidentStatus = "Logged" | "Alert Sent" | "Manual Review";
+
+export type ViolationRecord = {
+  id: string;
+  type: string;
+  vehicle: string;
+  location: string;
+  time: string;
+  status: IncidentStatus;
+  view?: string;
+  frame_index?: number;
+  timestamp_seconds?: number;
+  confidence?: number;
+  vehicle_type?: string;
+  speed_kph?: number | null;
+  signal_state?: string | null;
+  plate_confidence?: number | null;
+};
+
 export const ALERTS = [
   {
     id: 1,
@@ -47,7 +66,7 @@ export const ALERTS = [
   },
 ];
 
-export const VIOLATIONS = [
+export const VIOLATIONS: ViolationRecord[] = [
   {
     id: "V-8291",
     type: "Red Light Jump",

@@ -2,22 +2,32 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import subprocess
 from collections import Counter
 from dataclasses import asdict, dataclass
 from math import ceil
 from pathlib import Path
+from uuid import uuid4
 
 import cv2
 from ultralytics import YOLO
 
 from .config import (
+    DEFAULT_SPEED_LIMIT_KPH,
     EMERGENCY_CLASS_NAMES,
     EMERGENCY_MODEL_NAME,
     EMERGENCY_PRIORITY_SCORE,
+    KNOWN_SIGNAL_STATES,
+    MIN_PLATE_TEXT_LENGTH,
+    PLATE_CLASS_NAMES,
+    PLATE_MODEL_PATH,
+    STOP_LINE_RATIO,
+    TRAFFIC_LIGHT_CLASS_NAMES,
     VEHICLE_CLASS_IDS,
     VEHICLE_CLASS_NAMES,
+    VEHICLE_REAL_WIDTH_METERS,
     VEHICLE_WEIGHTS,
 )
 from .model_store import ensure_model
@@ -39,6 +49,35 @@ class EmergencyEvent:
     timestamp_seconds: float
 
 
+@dataclass(slots=True)
+class ViolationEvent:
+    id: str
+    type: str
+    vehicle: str
+    location: str
+    time: str
+    status: str
+    view: str
+    frame_index: int
+    timestamp_seconds: float
+    confidence: float
+    vehicle_type: str
+    speed_kph: float | None = None
+    signal_state: str | None = None
+    plate_confidence: float | None = None
+
+
+@dataclass(slots=True)
+class TrackSnapshot:
+    frame_index: int
+    center_x: float
+    center_y: float
+    bbox_width: float
+    class_name: str
+    speed_kph: float | None
+    crossed_stop_line: bool
+
+
 class _NullEmergencyModel:
     def predict(self, *args, **kwargs):
         return [_NullEmergencyResult()]
@@ -47,6 +86,16 @@ class _NullEmergencyModel:
 class _NullEmergencyResult:
     boxes = None
     names: dict[int, str] = {}
+
+
+class _NullPlateModel:
+    def predict(self, *args, **kwargs):
+        return [_NullEmergencyResult()]
+
+
+class _NullOcrReader:
+    def readtext(self, *args, **kwargs):
+        return []
 
 
 @dataclass(slots=True)
@@ -66,6 +115,9 @@ class ViewAnalysis:
     emergency_counts: dict[str, int]
     strongest_emergency: EmergencyEvent | None
     priority_score: float
+    signal_state_counts: dict[str, int]
+    dominant_signal_state: str | None
+    violations: list[ViolationEvent]
     annotated_video: str | None = None
 
 
@@ -95,6 +147,9 @@ def analyze_videos(
     output_dir.mkdir(parents=True, exist_ok=True)
     resolved_model = ensure_model(destination=model_path) if model_path else ensure_model()
     emergency_model_path = ensure_model(model_name=EMERGENCY_MODEL_NAME)
+    plate_model = _load_plate_model()
+    scene_model = _load_scene_model(emergency_model_path)
+    ocr_reader = _load_ocr_reader()
     model = YOLO(str(resolved_model))
     emergency_model = _load_emergency_model(emergency_model_path)
 
@@ -105,6 +160,9 @@ def analyze_videos(
         analysis = _analyze_single_video(
             model=model,
             emergency_model=emergency_model,
+            scene_model=scene_model,
+            plate_model=plate_model,
+            ocr_reader=ocr_reader,
             video_path=video_path,
             output_dir=output_dir,
             view_label=f"view_{index}",
@@ -117,6 +175,8 @@ def analyze_videos(
         )
         analyses.append(analysis)
         view_scores.append(ViewScore(label=analysis.view, congestion_score=analysis.priority_score))
+
+    incidents = _build_incidents_feed(analyses)
 
     base_green_times = allocate_green_times(
         view_scores=view_scores,
@@ -140,6 +200,7 @@ def analyze_videos(
         "emergency_model_path": str(emergency_model_path),
         "cycle_time_seconds": cycle_time,
         "views": [asdict(analysis) for analysis in analyses],
+        "incidents": incidents,
         "recommended_green_times_seconds": recommended_green_times,
         "priority_mode": "emergency_override" if priority_view else "balanced",
         "priority_view": priority_view,
@@ -164,6 +225,9 @@ def cleanup_paths(paths: list[Path]) -> None:
 def _analyze_single_video(
     model: YOLO,
     emergency_model,
+    scene_model,
+    plate_model,
+    ocr_reader,
     video_path: Path,
     output_dir: Path,
     view_label: str,
@@ -194,9 +258,14 @@ def _analyze_single_video(
     tracked_ids: set[tuple[str, int]] = set()
     class_breakdown: Counter[str] = Counter()
     emergency_counts: Counter[str] = Counter()
+    signal_state_counts: Counter[str] = Counter()
     strongest_emergency: EmergencyEvent | None = None
+    violations: list[ViolationEvent] = []
+    emitted_violation_keys: set[tuple[str, int]] = set()
+    track_history: dict[int, TrackSnapshot] = {}
     frame_index = 0
     sampled_emergency_frames = 0
+    dominant_signal_state: str | None = None
 
     try:
         while True:
@@ -233,6 +302,17 @@ def _analyze_single_video(
             peak_weighted = max(peak_weighted, weighted_count)
             sampled_frames += 1
 
+            scene_result = scene_model.predict(
+                inference_frame,
+                conf=max(conf_threshold, 0.2),
+                verbose=False,
+                imgsz=inference_size,
+            )[0]
+            signal_state = _estimate_signal_state(scene_result, inference_frame)
+            if signal_state in KNOWN_SIGNAL_STATES:
+                signal_state_counts[signal_state] += 1
+                dominant_signal_state = signal_state
+
             if frame_index % emergency_frame_stride == 0:
                 emergency_result = emergency_model.predict(
                     inference_frame,
@@ -256,8 +336,10 @@ def _analyze_single_video(
             if boxes is not None and boxes.cls is not None:
                 classes = boxes.cls.int().tolist()
                 ids = boxes.id.int().tolist() if boxes.id is not None else [None] * len(classes)
+                coords = boxes.xyxy.tolist() if boxes.xyxy is not None else []
+                confidences = boxes.conf.tolist() if boxes.conf is not None else [0.0] * len(classes)
                 frame_counts: Counter[str] = Counter()
-                for class_id, track_id in zip(classes, ids, strict=False):
+                for class_id, track_id, xyxy, confidence in zip(classes, ids, coords, confidences, strict=False):
                     class_name = VEHICLE_CLASS_NAMES.get(class_id)
                     if not class_name:
                         continue
@@ -268,6 +350,68 @@ def _analyze_single_video(
                     if token not in tracked_ids:
                         tracked_ids.add(token)
                         class_breakdown[class_name] += 1
+                    speed_kph, crossed_stop_line = _track_vehicle_motion(
+                        track_history=track_history,
+                        track_id=int(track_id),
+                        xyxy=xyxy,
+                        frame_index=frame_index,
+                        fps=fps,
+                        frame_height=inference_frame.shape[0],
+                        class_name=class_name,
+                    )
+                    if signal_state == "red" and crossed_stop_line:
+                        event_key = ("Red Light Jump", int(track_id))
+                        if event_key not in emitted_violation_keys:
+                            emitted_violation_keys.add(event_key)
+                            vehicle_crop = _extract_crop(inference_frame, xyxy)
+                            plate_text, plate_confidence = _read_plate_text(
+                                frame=vehicle_crop,
+                                plate_model=plate_model,
+                                scene_model=scene_model,
+                                ocr_reader=ocr_reader,
+                                conf_threshold=conf_threshold,
+                                inference_size=inference_size,
+                            )
+                            violations.append(
+                                _make_violation_event(
+                                    event_type="Red Light Jump",
+                                    view_label=view_label,
+                                    frame_index=frame_index,
+                                    fps=fps,
+                                    confidence=confidence,
+                                    vehicle_type=class_name,
+                                    plate_text=plate_text,
+                                    plate_confidence=plate_confidence,
+                                    signal_state=signal_state,
+                                )
+                            )
+                    if speed_kph and speed_kph >= DEFAULT_SPEED_LIMIT_KPH:
+                        event_key = ("Over-speeding", int(track_id))
+                        if event_key not in emitted_violation_keys:
+                            emitted_violation_keys.add(event_key)
+                            vehicle_crop = _extract_crop(inference_frame, xyxy)
+                            plate_text, plate_confidence = _read_plate_text(
+                                frame=vehicle_crop,
+                                plate_model=plate_model,
+                                scene_model=scene_model,
+                                ocr_reader=ocr_reader,
+                                conf_threshold=conf_threshold,
+                                inference_size=inference_size,
+                            )
+                            violations.append(
+                                _make_violation_event(
+                                    event_type="Over-speeding",
+                                    view_label=view_label,
+                                    frame_index=frame_index,
+                                    fps=fps,
+                                    confidence=confidence,
+                                    vehicle_type=class_name,
+                                    plate_text=plate_text,
+                                    plate_confidence=plate_confidence,
+                                    speed_kph=speed_kph,
+                                    signal_state=signal_state,
+                                )
+                            )
                 if frame_counts:
                     for class_name, count in frame_counts.items():
                         class_breakdown[class_name] = max(class_breakdown[class_name], count)
@@ -316,6 +460,9 @@ def _analyze_single_video(
         emergency_counts=dict(emergency_counts),
         strongest_emergency=strongest_emergency,
         priority_score=round(priority_score, 3),
+        signal_state_counts=dict(signal_state_counts),
+        dominant_signal_state=_dominant_signal_state(signal_state_counts) or dominant_signal_state,
+        violations=violations,
         annotated_video=annotated_video,
     )
 
@@ -333,6 +480,245 @@ def _resize_frame_for_inference(frame, inference_size: int):
     target_width = max(1, ceil(width * scale))
     target_height = max(1, ceil(height * scale))
     return cv2.resize(frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
+
+
+def _load_plate_model():
+    if PLATE_MODEL_PATH.exists():
+        return YOLO(str(PLATE_MODEL_PATH))
+    logger.info("Plate model not found at %s; falling back to YOLO World plate prompts.", PLATE_MODEL_PATH)
+    return _NullPlateModel()
+
+
+def _load_scene_model(model_path: Path):
+    try:
+        if YOLOWorld is None:
+            return _NullEmergencyModel()
+        model = YOLOWorld(str(model_path))
+        model.set_classes([*EMERGENCY_CLASS_NAMES, *TRAFFIC_LIGHT_CLASS_NAMES, *PLATE_CLASS_NAMES])
+        return model
+    except ModuleNotFoundError as error:
+        logger.warning("Scene model disabled because an optional dependency is missing: %s", error)
+        return _NullEmergencyModel()
+
+
+def _load_ocr_reader():
+    try:
+        import easyocr
+
+        return easyocr.Reader(["en"], gpu=False, verbose=False)
+    except Exception as error:  # pragma: no cover - optional runtime dependency
+        logger.warning("OCR reader unavailable: %s", error)
+        return _NullOcrReader()
+
+
+def _track_vehicle_motion(
+    track_history: dict[int, TrackSnapshot],
+    track_id: int,
+    xyxy: list[float],
+    frame_index: int,
+    fps: float,
+    frame_height: int,
+    class_name: str,
+) -> tuple[float | None, bool]:
+    x1, y1, x2, y2 = [float(value) for value in xyxy]
+    center_x = (x1 + x2) / 2.0
+    center_y = (y1 + y2) / 2.0
+    bbox_width = max(x2 - x1, 1.0)
+    current_crossed = frame_height > 0 and (center_y / frame_height) >= STOP_LINE_RATIO
+
+    speed_kph: float | None = None
+    crossed_stop_line = False
+    previous = track_history.get(track_id)
+    if previous is not None and fps > 0:
+        frame_delta = max(frame_index - previous.frame_index, 1)
+        seconds = frame_delta / fps
+        pixels_per_meter = bbox_width / max(VEHICLE_REAL_WIDTH_METERS.get(class_name, 1.8), 0.5)
+        distance_pixels = ((center_x - previous.center_x) ** 2 + (center_y - previous.center_y) ** 2) ** 0.5
+        if pixels_per_meter > 0 and seconds > 0:
+            meters_per_second = (distance_pixels / pixels_per_meter) / seconds
+            speed_kph = round(meters_per_second * 3.6, 2)
+        crossed_stop_line = not previous.crossed_stop_line and current_crossed
+
+    track_history[track_id] = TrackSnapshot(
+        frame_index=frame_index,
+        center_x=center_x,
+        center_y=center_y,
+        bbox_width=bbox_width,
+        class_name=class_name,
+        speed_kph=speed_kph,
+        crossed_stop_line=current_crossed,
+    )
+    return speed_kph, crossed_stop_line
+
+
+def _estimate_signal_state(scene_result, frame) -> str | None:
+    boxes = scene_result.boxes
+    if boxes is None or boxes.cls is None or boxes.xyxy is None:
+        return None
+
+    names = getattr(scene_result, "names", {})
+    states: Counter[str] = Counter()
+    for class_id, xyxy in zip(boxes.cls.int().tolist(), boxes.xyxy.tolist(), strict=False):
+        label = names.get(class_id) if isinstance(names, dict) else None
+        if str(label).lower() != "traffic light":
+            continue
+        crop = _extract_crop(frame, xyxy)
+        state = _classify_traffic_light_crop(crop)
+        if state:
+            states[state] += 1
+    return _dominant_signal_state(states)
+
+
+def _classify_traffic_light_crop(crop) -> str | None:
+    if crop.size == 0:
+        return None
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    red_mask = cv2.inRange(hsv, (0, 80, 80), (12, 255, 255)) | cv2.inRange(hsv, (160, 80, 80), (180, 255, 255))
+    yellow_mask = cv2.inRange(hsv, (18, 80, 80), (40, 255, 255))
+    green_mask = cv2.inRange(hsv, (40, 50, 50), (95, 255, 255))
+    counts = {
+        "red": int(cv2.countNonZero(red_mask)),
+        "yellow": int(cv2.countNonZero(yellow_mask)),
+        "green": int(cv2.countNonZero(green_mask)),
+    }
+    label, pixels = max(counts.items(), key=lambda item: item[1])
+    return label if pixels > 6 else None
+
+
+def _dominant_signal_state(states: Counter[str]) -> str | None:
+    if not states:
+        return None
+    return states.most_common(1)[0][0]
+
+
+def _extract_crop(frame, xyxy: list[float]):
+    x1, y1, x2, y2 = [int(max(value, 0)) for value in xyxy]
+    x2 = min(x2, frame.shape[1])
+    y2 = min(y2, frame.shape[0])
+    return frame[y1:y2, x1:x2]
+
+
+def _read_plate_text(frame, plate_model, scene_model, ocr_reader, conf_threshold: float, inference_size: int) -> tuple[str, float | None]:
+    if frame.size == 0:
+        return "Unknown", None
+
+    plate_crop, plate_confidence = _extract_plate_crop(
+        frame=frame,
+        plate_model=plate_model,
+        scene_model=scene_model,
+        conf_threshold=conf_threshold,
+        inference_size=inference_size,
+    )
+    ocr_target = plate_crop if plate_crop is not None else frame
+    text, confidence = _ocr_plate_text(ocr_reader, ocr_target)
+    return text, plate_confidence if plate_confidence is not None else confidence
+
+
+def _extract_plate_crop(frame, plate_model, scene_model, conf_threshold: float, inference_size: int):
+    for model in (plate_model, scene_model):
+        result = model.predict(frame, conf=max(conf_threshold, 0.2), verbose=False, imgsz=inference_size)[0]
+        crop, confidence = _pick_plate_crop(result, frame)
+        if crop is not None:
+            return crop, confidence
+    return None, None
+
+
+def _pick_plate_crop(result, frame):
+    boxes = result.boxes
+    if boxes is None or boxes.cls is None or boxes.xyxy is None:
+        return None, None
+    names = getattr(result, "names", {})
+    confidences = boxes.conf.tolist() if boxes.conf is not None else [0.0] * len(boxes.cls)
+    candidates: list[tuple[float, object]] = []
+    for class_id, confidence, xyxy in zip(boxes.cls.int().tolist(), confidences, boxes.xyxy.tolist(), strict=False):
+        label = str(names.get(class_id, "")).lower()
+        if "plate" not in label:
+            continue
+        candidates.append((float(confidence), xyxy))
+    if not candidates:
+        return None, None
+    confidence, xyxy = max(candidates, key=lambda item: item[0])
+    crop = _extract_crop(frame, xyxy)
+    return (crop if crop.size else None), round(confidence, 3)
+
+
+def _ocr_plate_text(ocr_reader, image) -> tuple[str, float | None]:
+    if image.size == 0:
+        return "Unknown", None
+    try:
+        results = ocr_reader.readtext(image, detail=1)
+    except TypeError:
+        results = ocr_reader.readtext(image)
+    if not results:
+        return "Unknown", None
+
+    best_text = "Unknown"
+    best_confidence: float | None = None
+    for item in results:
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            continue
+        text = _sanitize_plate_text(str(item[1]))
+        confidence = float(item[2]) if len(item) > 2 and isinstance(item[2], (int, float)) else None
+        if text == "Unknown":
+            continue
+        if best_confidence is None or (confidence or 0.0) > best_confidence:
+            best_text = text
+            best_confidence = round(confidence, 3) if confidence is not None else None
+    return best_text, best_confidence
+
+
+def _sanitize_plate_text(value: str) -> str:
+    normalized = re.sub(r"[^A-Z0-9]", "", value.upper())
+    if len(normalized) < MIN_PLATE_TEXT_LENGTH:
+        return "Unknown"
+    if len(normalized) > 10:
+        normalized = normalized[:10]
+    if len(normalized) > 4:
+        return f"{normalized[:-4]} {normalized[-4:]}"
+    return normalized
+
+
+def _make_violation_event(
+    event_type: str,
+    view_label: str,
+    frame_index: int,
+    fps: float,
+    confidence: float,
+    vehicle_type: str,
+    plate_text: str,
+    plate_confidence: float | None,
+    speed_kph: float | None = None,
+    signal_state: str | None = None,
+) -> ViolationEvent:
+    timestamp_seconds = round((frame_index / fps), 2) if fps > 0 else 0.0
+    return ViolationEvent(
+        id=f"V-{uuid4().hex[:6].upper()}",
+        type=event_type,
+        vehicle=plate_text,
+        location=view_label.replace("_", " ").title(),
+        time=_format_timestamp(timestamp_seconds),
+        status="Alert Sent" if event_type == "Red Light Jump" else "Logged",
+        view=view_label,
+        frame_index=frame_index,
+        timestamp_seconds=timestamp_seconds,
+        confidence=round(float(confidence), 3),
+        vehicle_type=vehicle_type,
+        speed_kph=round(speed_kph, 2) if speed_kph is not None else None,
+        signal_state=signal_state,
+        plate_confidence=plate_confidence,
+    )
+
+
+def _build_incidents_feed(analyses: list[ViewAnalysis]) -> list[dict]:
+    incidents = [asdict(violation) for analysis in analyses for violation in analysis.violations]
+    incidents.sort(key=lambda incident: incident["timestamp_seconds"], reverse=True)
+    return incidents
+
+
+def _format_timestamp(timestamp_seconds: float) -> str:
+    minutes = int(timestamp_seconds // 60)
+    seconds = int(timestamp_seconds % 60)
+    return f"{minutes:02d}:{seconds:02d}"
 
 
 def _predict_vehicles(
