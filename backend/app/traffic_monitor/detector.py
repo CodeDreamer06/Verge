@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import json
 import logging
 import shutil
 import subprocess
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from collections import Counter
 from dataclasses import asdict, dataclass
 from math import ceil
@@ -31,6 +33,7 @@ except ImportError:  # pragma: no cover - depends on installed ultralytics versi
 
 logger = logging.getLogger(__name__)
 PROGRESS_LOG_INTERVAL_FRAMES = 120
+MAX_PARALLEL_VIEW_WORKERS = 2
 
 
 @dataclass(slots=True)
@@ -74,6 +77,21 @@ class ViewAnalysis:
     annotated_video: str | None = None
 
 
+@dataclass(slots=True)
+class _ViewTask:
+    video_path: str
+    output_dir: str
+    view_label: str
+    conf_threshold: float
+    frame_stride: int
+    emergency_frame_stride: int
+    save_annotated: bool
+    inference_size: int
+    use_tracking: bool
+    model_path: str
+    emergency_model_path: str
+
+
 def analyze_videos(
     video_paths: list[Path],
     output_dir: Path,
@@ -113,42 +131,19 @@ def analyze_videos(
     resolved_model = ensure_model(destination=model_path) if model_path else ensure_model()
     emergency_model_path = ensure_model(model_name=EMERGENCY_MODEL_NAME)
     logger.info("Resolved models vehicle=%s emergency=%s", resolved_model, emergency_model_path)
-    model_init_started = time.perf_counter()
-    model = YOLO(str(resolved_model))
-    emergency_model = _load_emergency_model(emergency_model_path)
-    logger.info("Initialized inference models in %.2fs", time.perf_counter() - model_init_started)
-
-    analyses: list[ViewAnalysis] = []
-    view_scores: list[ViewScore] = []
-
-    for index, video_path in enumerate(video_paths, start=1):
-        view_started = time.perf_counter()
-        analysis = _analyze_single_video(
-            model=model,
-            emergency_model=emergency_model,
-            video_path=video_path,
-            output_dir=output_dir,
-            view_label=f"view_{index}",
-            conf_threshold=conf_threshold,
-            frame_stride=frame_stride,
-            emergency_frame_stride=emergency_frame_stride or frame_stride,
-            save_annotated=save_annotated,
-            inference_size=inference_size,
-            use_tracking=use_tracking,
-        )
-        analyses.append(analysis)
-        view_scores.append(ViewScore(label=analysis.view, congestion_score=analysis.priority_score))
-        logger.info(
-            "Completed view=%s source=%s frames=%d avg_vehicles=%.2f peak=%d violations=%d emergencies=%s elapsed=%.2fs",
-            analysis.view,
-            video_path,
-            analysis.frames_processed,
-            analysis.average_vehicle_count,
-            analysis.peak_vehicle_count,
-            len(analysis.violations),
-            analysis.emergency_detected,
-            time.perf_counter() - view_started,
-        )
+    analyses = _analyze_views(
+        video_paths=video_paths,
+        output_dir=output_dir,
+        resolved_model=resolved_model,
+        emergency_model_path=emergency_model_path,
+        conf_threshold=conf_threshold,
+        frame_stride=frame_stride,
+        emergency_frame_stride=emergency_frame_stride or frame_stride,
+        save_annotated=save_annotated,
+        inference_size=inference_size,
+        use_tracking=use_tracking,
+    )
+    view_scores = [ViewScore(label=analysis.view, congestion_score=analysis.priority_score) for analysis in analyses]
 
     incidents = _build_incidents_feed(analyses)
 
@@ -185,6 +180,88 @@ def analyze_videos(
     result["summary_path"] = str(summary_path)
     logger.info("Traffic analysis finished summary=%s total=%.2fs", summary_path, time.perf_counter() - started_at)
     return result
+
+
+def _analyze_views(
+    video_paths: list[Path],
+    output_dir: Path,
+    resolved_model: Path,
+    emergency_model_path: Path,
+    conf_threshold: float,
+    frame_stride: int,
+    emergency_frame_stride: int,
+    save_annotated: bool,
+    inference_size: int,
+    use_tracking: bool,
+) -> list[ViewAnalysis]:
+    tasks = [
+        _ViewTask(
+            video_path=str(video_path),
+            output_dir=str(output_dir),
+            view_label=f"view_{index}",
+            conf_threshold=conf_threshold,
+            frame_stride=frame_stride,
+            emergency_frame_stride=emergency_frame_stride,
+            save_annotated=save_annotated,
+            inference_size=inference_size,
+            use_tracking=use_tracking,
+            model_path=str(resolved_model),
+            emergency_model_path=str(emergency_model_path),
+        )
+        for index, video_path in enumerate(video_paths, start=1)
+    ]
+    max_workers = _determine_parallel_view_workers(len(tasks))
+    logger.info("Using parallel view workers=%d", max_workers)
+
+    if max_workers <= 1:
+        return [_analyze_view_task(task) for task in tasks]
+
+    analyses_by_label: dict[str, ViewAnalysis] = {}
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_task = {executor.submit(_analyze_view_task, task): task for task in tasks}
+        for future in as_completed(future_to_task):
+            task = future_to_task[future]
+            analysis = future.result()
+            analyses_by_label[analysis.view] = analysis
+            logger.info(
+                "Completed view=%s source=%s frames=%d avg_vehicles=%.2f peak=%d violations=%d emergencies=%s",
+                analysis.view,
+                task.video_path,
+                analysis.frames_processed,
+                analysis.average_vehicle_count,
+                analysis.peak_vehicle_count,
+                len(analysis.violations),
+                analysis.emergency_detected,
+            )
+
+    return [analyses_by_label[f"view_{index}"] for index in range(1, len(tasks) + 1)]
+
+
+def _determine_parallel_view_workers(task_count: int) -> int:
+    if task_count <= 1:
+        return 1
+    cpu_total = os.cpu_count() or 1
+    return max(1, min(task_count, MAX_PARALLEL_VIEW_WORKERS, cpu_total))
+
+
+def _analyze_view_task(task: _ViewTask) -> ViewAnalysis:
+    model_init_started = time.perf_counter()
+    model = YOLO(task.model_path)
+    emergency_model = _load_emergency_model(Path(task.emergency_model_path))
+    logger.info("Initialized worker models view=%s in %.2fs", task.view_label, time.perf_counter() - model_init_started)
+    return _analyze_single_video(
+        model=model,
+        emergency_model=emergency_model,
+        video_path=Path(task.video_path),
+        output_dir=Path(task.output_dir),
+        view_label=task.view_label,
+        conf_threshold=task.conf_threshold,
+        frame_stride=task.frame_stride,
+        emergency_frame_stride=task.emergency_frame_stride,
+        save_annotated=task.save_annotated,
+        inference_size=task.inference_size,
+        use_tracking=task.use_tracking,
+    )
 
 
 def cleanup_paths(paths: list[Path]) -> None:
