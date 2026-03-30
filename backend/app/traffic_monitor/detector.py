@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from collections import Counter
 from dataclasses import asdict, dataclass
+from math import ceil
 from pathlib import Path
 
 import cv2
@@ -74,15 +75,22 @@ def analyze_videos(
     model_path: Path | None = None,
     conf_threshold: float = 0.25,
     frame_stride: int = 3,
+    emergency_frame_stride: int | None = None,
     cycle_time: int = 120,
     min_green: int = 15,
     max_green: int = 75,
     save_annotated: bool = False,
+    inference_size: int = 640,
+    use_tracking: bool = True,
 ) -> dict:
     if not video_paths:
         raise ValueError("At least one video path is required.")
     if min_green > max_green:
         raise ValueError("min_green cannot be greater than max_green.")
+    if frame_stride < 1:
+        raise ValueError("frame_stride must be at least 1.")
+    if emergency_frame_stride is not None and emergency_frame_stride < 1:
+        raise ValueError("emergency_frame_stride must be at least 1.")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     resolved_model = ensure_model(destination=model_path) if model_path else ensure_model()
@@ -102,7 +110,10 @@ def analyze_videos(
             view_label=f"view_{index}",
             conf_threshold=conf_threshold,
             frame_stride=frame_stride,
+            emergency_frame_stride=emergency_frame_stride or frame_stride,
             save_annotated=save_annotated,
+            inference_size=inference_size,
+            use_tracking=use_tracking,
         )
         analyses.append(analysis)
         view_scores.append(ViewScore(label=analysis.view, congestion_score=analysis.priority_score))
@@ -158,7 +169,10 @@ def _analyze_single_video(
     view_label: str,
     conf_threshold: float,
     frame_stride: int,
+    emergency_frame_stride: int,
     save_annotated: bool,
+    inference_size: int,
+    use_tracking: bool,
 ) -> ViewAnalysis:
     if not video_path.exists():
         raise FileNotFoundError(f"Video not found: {video_path}")
@@ -184,33 +198,34 @@ def _analyze_single_video(
     emergency_counts: Counter[str] = Counter()
     strongest_emergency: EmergencyEvent | None = None
     frame_index = 0
+    sampled_emergency_frames = 0
 
     try:
         while True:
+            if frame_stride > 1:
+                should_stop = False
+                for _ in range(frame_stride - 1):
+                    if not capture.grab():
+                        should_stop = True
+                        break
+                    frame_index += 1
+                if should_stop:
+                    break
+
             ok, frame = capture.read()
             if not ok:
                 break
 
             frame_index += 1
-            if frame_stride > 1 and frame_index % frame_stride != 0:
-                continue
 
-            try:
-                results = model.track(
-                    frame,
-                    persist=True,
-                    conf=conf_threshold,
-                    classes=VEHICLE_CLASS_IDS,
-                    verbose=False,
-                    tracker="bytetrack.yaml",
-                )
-            except ModuleNotFoundError:
-                results = model.predict(
-                    frame,
-                    conf=conf_threshold,
-                    classes=VEHICLE_CLASS_IDS,
-                    verbose=False,
-                )
+            inference_frame = _resize_frame_for_inference(frame, inference_size)
+            results = _predict_vehicles(
+                model=model,
+                frame=inference_frame,
+                conf_threshold=conf_threshold,
+                use_tracking=use_tracking,
+                inference_size=inference_size,
+            )
             result = results[0]
             vehicle_count, weighted_count = _count_detections(result)
 
@@ -220,32 +235,44 @@ def _analyze_single_video(
             peak_weighted = max(peak_weighted, weighted_count)
             sampled_frames += 1
 
-            emergency_result = emergency_model.predict(frame, conf=conf_threshold, verbose=False)[0]
-            emergency_matches, frame_strongest = _extract_emergency_matches(
-                emergency_result,
-                frame_index=frame_index,
-                fps=fps,
-            )
-            emergency_counts.update(emergency_matches)
-            if frame_strongest and (
-                strongest_emergency is None or frame_strongest.confidence > strongest_emergency.confidence
-            ):
-                strongest_emergency = frame_strongest
+            if frame_index % emergency_frame_stride == 0:
+                emergency_result = emergency_model.predict(
+                    inference_frame,
+                    conf=conf_threshold,
+                    verbose=False,
+                    imgsz=inference_size,
+                )[0]
+                emergency_matches, frame_strongest = _extract_emergency_matches(
+                    emergency_result,
+                    frame_index=frame_index,
+                    fps=fps,
+                )
+                emergency_counts.update(emergency_matches)
+                sampled_emergency_frames += 1
+                if frame_strongest and (
+                    strongest_emergency is None or frame_strongest.confidence > strongest_emergency.confidence
+                ):
+                    strongest_emergency = frame_strongest
 
             boxes = result.boxes
             if boxes is not None and boxes.cls is not None:
                 classes = boxes.cls.int().tolist()
                 ids = boxes.id.int().tolist() if boxes.id is not None else [None] * len(classes)
+                frame_counts: Counter[str] = Counter()
                 for class_id, track_id in zip(classes, ids, strict=False):
                     class_name = VEHICLE_CLASS_NAMES.get(class_id)
                     if not class_name:
                         continue
-                    if track_id is None:
+                    if not use_tracking or track_id is None:
+                        frame_counts[class_name] += 1
                         continue
                     token = (class_name, int(track_id))
                     if token not in tracked_ids:
                         tracked_ids.add(token)
                         class_breakdown[class_name] += 1
+                if frame_counts:
+                    for class_name, count in frame_counts.items():
+                        class_breakdown[class_name] = max(class_breakdown[class_name], count)
 
             if writer is not None:
                 writer.write(result.plot())
@@ -257,7 +284,7 @@ def _analyze_single_video(
 
     average_vehicle_count = (total_count / sampled_frames) if sampled_frames else 0.0
     weighted_average_load = (total_weighted_count / sampled_frames) if sampled_frames else 0.0
-    estimated_unique = sum(class_breakdown.values()) if class_breakdown else peak_count
+    estimated_unique = sum(class_breakdown.values()) if use_tracking and class_breakdown else peak_count
     if not class_breakdown and peak_count > 0:
         class_breakdown["vehicle_estimate"] = peak_count
 
@@ -283,6 +310,51 @@ def _analyze_single_video(
         strongest_emergency=strongest_emergency,
         priority_score=round(priority_score, 3),
         annotated_video=annotated_video,
+    )
+
+
+def _resize_frame_for_inference(frame, inference_size: int):
+    if inference_size <= 0:
+        return frame
+
+    height, width = frame.shape[:2]
+    longest_edge = max(height, width)
+    if longest_edge <= inference_size:
+        return frame
+
+    scale = inference_size / float(longest_edge)
+    target_width = max(1, ceil(width * scale))
+    target_height = max(1, ceil(height * scale))
+    return cv2.resize(frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
+
+
+def _predict_vehicles(
+    model: YOLO,
+    frame,
+    conf_threshold: float,
+    use_tracking: bool,
+    inference_size: int,
+):
+    if use_tracking:
+        try:
+            return model.track(
+                frame,
+                persist=True,
+                conf=conf_threshold,
+                classes=VEHICLE_CLASS_IDS,
+                verbose=False,
+                tracker="bytetrack.yaml",
+                imgsz=inference_size,
+            )
+        except ModuleNotFoundError:
+            pass
+
+    return model.predict(
+        frame,
+        conf=conf_threshold,
+        classes=VEHICLE_CLASS_IDS,
+        verbose=False,
+        imgsz=inference_size,
     )
 
 

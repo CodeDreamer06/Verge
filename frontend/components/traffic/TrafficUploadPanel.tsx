@@ -262,7 +262,7 @@ export default function TrafficUploadPanel() {
           <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-300/80">Junction Upload Console</p>
           <h3 className="mt-2 text-2xl font-semibold tracking-tight text-white">Feed four CCTV clips into the detector</h3>
           <p className="mt-2 max-w-2xl text-sm text-white/65">
-            Upload the north, east, south, and west views. The Python service runs the base YOLO traffic pass plus an emergency-vehicle scan, writes the JSON summary, and returns annotated feeds for the dashboard.
+            Upload the north, east, south, and west views. The Python service runs a fast YOLO traffic pass plus emergency-vehicle sampling and returns the signal plan and JSON summary without waiting on annotated video exports.
           </p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white/70">
@@ -356,7 +356,7 @@ export default function TrafficUploadPanel() {
               <p className="text-[11px] uppercase tracking-[0.24em] text-cyan-200/70">Live Processing</p>
               <h4 className="mt-2 text-lg font-semibold text-white">Traffic and emergency analysis is running</h4>
               <p className="mt-2 max-w-2xl text-sm text-white/65">
-                The detector is still working. This panel mirrors the current pipeline stages so the operator knows where the run is spending time.
+                The upload flow now prioritizes turnaround time: sparse frame sampling, lower-resolution inference, and no annotated export in the request path.
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-right">
@@ -618,7 +618,7 @@ export default function TrafficUploadPanel() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Annotated Feeds</p>
-                <h4 className="mt-2 text-lg font-semibold text-white">All processed junction views</h4>
+                <h4 className="mt-2 text-lg font-semibold text-white">Processed junction views</h4>
               </div>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
@@ -651,7 +651,9 @@ export default function TrafficUploadPanel() {
                       preload="metadata"
                     />
                   ) : (
-                    <div className="flex aspect-video items-center justify-center text-sm text-white/40">Annotated video unavailable</div>
+                    <div className="flex aspect-video items-center justify-center text-sm text-white/40">
+                      Fast mode skips annotated video generation.
+                    </div>
                   )}
                 </div>
               ))}

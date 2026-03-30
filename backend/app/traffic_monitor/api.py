@@ -12,6 +12,9 @@ from .config import OUTPUTS_DIR, UPLOADS_DIR
 from .detector import analyze_videos, cleanup_paths
 
 MAX_UPLOADS = 4
+FAST_API_FRAME_STRIDE = 120
+FAST_API_EMERGENCY_FRAME_STRIDE = 360
+FAST_API_INFERENCE_SIZE = 416
 
 app = FastAPI(title="Verge Traffic API", version="0.1.0")
 app.add_middleware(
@@ -41,7 +44,7 @@ async def analyze(
     cycle_time: int = Form(120),
     min_green: int = Form(15),
     max_green: int = Form(75),
-    frame_stride: int = Form(3),
+    frame_stride: int = Form(FAST_API_FRAME_STRIDE),
     conf_threshold: float = Form(0.25),
 ) -> dict:
     if not videos:
@@ -68,10 +71,13 @@ async def analyze(
             output_dir=output_dir,
             conf_threshold=conf_threshold,
             frame_stride=frame_stride,
+            emergency_frame_stride=max(frame_stride, FAST_API_EMERGENCY_FRAME_STRIDE),
             cycle_time=cycle_time,
             min_green=min_green,
             max_green=max_green,
-            save_annotated=True,
+            save_annotated=False,
+            inference_size=FAST_API_INFERENCE_SIZE,
+            use_tracking=False,
         )
     except Exception as exc:
         cleanup_paths([upload_dir, output_dir])
