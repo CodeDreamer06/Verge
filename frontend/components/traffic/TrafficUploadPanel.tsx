@@ -186,6 +186,22 @@ export default function TrafficUploadPanel() {
   }, [playbackSpeed, result]);
 
   useEffect(() => {
+    if (!result) {
+      return;
+    }
+
+    Object.values(videoRefs.current).forEach((video) => {
+      if (!video) {
+        return;
+      }
+      video.currentTime = 0;
+      void video.play().catch(() => {
+        // Browsers may reject an early play() before metadata is ready.
+      });
+    });
+  }, [result]);
+
+  useEffect(() => {
     const nextUrls: Record<string, string | null> = {
       north: null,
       east: null,
@@ -609,8 +625,17 @@ export default function TrafficUploadPanel() {
                             }}
                             className="w-full aspect-video object-cover"
                             src={view.annotated_video_url}
+                            autoPlay
                             controls
+                            muted
+                            playsInline
                             preload="metadata"
+                            onLoadedData={(event) => {
+                              event.currentTarget.currentTime = 0;
+                              void event.currentTarget.play().catch(() => {
+                                // Ignore autoplay rejections after the element is visible.
+                              });
+                            }}
                           />
                         ) : (
                           <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 text-xs text-muted-foreground bg-black/60">
