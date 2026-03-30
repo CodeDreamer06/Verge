@@ -17,6 +17,19 @@ uv run verge-traffic download-model
 
 This downloads the official COCO-pretrained `yolov8n.pt` detector into `assets/models/`.
 
+## Run The API
+
+```bash
+uv run verge-traffic serve --host 0.0.0.0 --port 8000
+```
+
+Available endpoints:
+
+- `GET /health`
+- `POST /analyze` with 1 to 4 multipart `videos` files
+
+The API keeps annotated outputs and the JSON summary under `outputs/<run_id>/` and serves them back under `/outputs/<run_id>/...`.
+
 ## Analyze Traffic Videos
 
 Single view:

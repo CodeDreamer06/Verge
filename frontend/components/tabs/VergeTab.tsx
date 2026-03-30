@@ -4,7 +4,9 @@ import { motion } from "framer-motion";
 import { Activity, Car, FileText, Siren, TrendingUp, Video, Zap } from "lucide-react";
 import Image from "next/image";
 import { ALERTS, VIOLATIONS } from "@/lib/data";
-import trafficImage from "../../traffic.jpeg";
+import TrafficUploadPanel from "@/components/traffic/TrafficUploadPanel";
+// import trafficImage from "../../traffic.jpeg";
+import cctvImage from "../../cctv.png";
 
 export default function VergeTab() {
   return (
@@ -121,7 +123,11 @@ export default function VergeTab() {
             </div>
           </div>
 
-          <div className="relative aspect-video rounded-3xl overflow-hidden bg-zinc-900 border border-white/10 shadow-2xl group ring-1 ring-white/5">
+          <div className="relative aspect-video rounded-3xl">
+            <Image src={cctvImage} alt="CCTV footage" fill className="absolute inset-0 object-cover"/>
+          </div>
+
+          {/* <div className="relative aspect-video rounded-3xl overflow-hidden bg-zinc-900 border border-white/10 shadow-2xl group ring-1 ring-white/5">
             <Image
               src={trafficImage}
               alt="Traffic camera feed"
@@ -199,7 +205,7 @@ export default function VergeTab() {
                 <span className="text-xs font-semibold text-green-400 uppercase tracking-wider">AI Active</span>
               </div>
             </div>
-          </div>
+          </div> */}
         </div>
 
         <div className="space-y-6">
@@ -273,6 +279,8 @@ export default function VergeTab() {
           </div>
         </div>
       </div>
+
+      <TrafficUploadPanel />
 
       <div className="mt-4">
         <div className="flex items-center justify-between mb-4">

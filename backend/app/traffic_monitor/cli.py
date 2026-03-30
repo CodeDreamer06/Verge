@@ -4,6 +4,9 @@ import argparse
 import json
 from pathlib import Path
 
+import uvicorn
+
+from .api import app
 from .detector import analyze_videos
 from .model_store import ensure_model
 
@@ -18,6 +21,10 @@ def build_parser() -> argparse.ArgumentParser:
         default="yolov8n.pt",
         help="Ultralytics model filename to download.",
     )
+
+    serve_parser = subparsers.add_parser("serve", help="Run the backend API server.")
+    serve_parser.add_argument("--host", default="127.0.0.1", help="Bind host.")
+    serve_parser.add_argument("--port", type=int, default=8000, help="Bind port.")
 
     analyze_parser = subparsers.add_parser("analyze", help="Analyze one or more CCTV videos.")
     analyze_parser.add_argument("--video", action="append", required=True, help="Absolute or relative path to a video.")
@@ -39,6 +46,9 @@ def main() -> None:
     if args.command == "download-model":
         model_path = ensure_model(model_name=args.model_name)
         print(model_path)
+        return
+    if args.command == "serve":
+        uvicorn.run(app, host=args.host, port=args.port)
         return
 
     result = analyze_videos(

@@ -6,6 +6,8 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 ASSETS_DIR = BACKEND_ROOT / "assets"
 MODELS_DIR = ASSETS_DIR / "models"
+UPLOADS_DIR = BACKEND_ROOT / "uploads"
+OUTPUTS_DIR = BACKEND_ROOT / "outputs"
 DEFAULT_MODEL_NAME = "yolov8n.pt"
 DEFAULT_MODEL_PATH = MODELS_DIR / DEFAULT_MODEL_NAME
 

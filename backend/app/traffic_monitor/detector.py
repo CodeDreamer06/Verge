@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -83,6 +84,16 @@ def analyze_videos(
     summary_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     result["summary_path"] = str(summary_path)
     return result
+
+
+def cleanup_paths(paths: list[Path]) -> None:
+    for path in paths:
+        if not path.exists():
+            continue
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            path.unlink(missing_ok=True)
 
 
 def _analyze_single_video(

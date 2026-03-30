@@ -5,14 +5,18 @@ description = "CLI traffic detection and signal balancing for Verge."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "fastapi>=0.116.0",
   "lap>=0.5.12",
   "numpy>=2.0.0",
   "opencv-python-headless>=4.10.0",
+  "python-multipart>=0.0.20",
   "ultralytics>=8.3.0",
+  "uvicorn>=0.35.0",
 ]
 
 [project.optional-dependencies]
 dev = [
+  "httpx>=0.28.0",
   "pytest>=8.0.0",
 ]
 
