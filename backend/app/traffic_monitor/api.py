@@ -75,7 +75,7 @@ async def analyze(
             cycle_time=cycle_time,
             min_green=min_green,
             max_green=max_green,
-            save_annotated=False,
+            save_annotated=True,
             inference_size=FAST_API_INFERENCE_SIZE,
             use_tracking=False,
         )

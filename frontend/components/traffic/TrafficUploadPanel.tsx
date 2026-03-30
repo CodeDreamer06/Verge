@@ -262,7 +262,7 @@ export default function TrafficUploadPanel() {
           <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-300/80">Junction Upload Console</p>
           <h3 className="mt-2 text-2xl font-semibold tracking-tight text-white">Feed four CCTV clips into the detector</h3>
           <p className="mt-2 max-w-2xl text-sm text-white/65">
-            Upload the north, east, south, and west views. The Python service runs a fast YOLO traffic pass plus emergency-vehicle sampling and returns the signal plan and JSON summary without waiting on annotated video exports.
+            Upload the north, east, south, and west views. The Python service runs a fast YOLO traffic pass plus emergency-vehicle sampling, then returns the signal plan, JSON summary, and sampled annotated clips.
           </p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white/70">
@@ -356,7 +356,7 @@ export default function TrafficUploadPanel() {
               <p className="text-[11px] uppercase tracking-[0.24em] text-cyan-200/70">Live Processing</p>
               <h4 className="mt-2 text-lg font-semibold text-white">Traffic and emergency analysis is running</h4>
               <p className="mt-2 max-w-2xl text-sm text-white/65">
-                The upload flow now prioritizes turnaround time: sparse frame sampling, lower-resolution inference, and no annotated export in the request path.
+                The upload flow now prioritizes turnaround time: sparse frame sampling, lower-resolution inference, and lightweight sampled annotated exports.
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-right">
@@ -652,7 +652,7 @@ export default function TrafficUploadPanel() {
                     />
                   ) : (
                     <div className="flex aspect-video items-center justify-center text-sm text-white/40">
-                      Fast mode skips annotated video generation.
+                      Annotated video unavailable for this run.
                     </div>
                   )}
                 </div>

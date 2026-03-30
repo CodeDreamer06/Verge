@@ -182,11 +182,9 @@ def _analyze_single_video(
         raise RuntimeError(f"Unable to open video: {video_path}")
 
     fps = capture.get(cv2.CAP_PROP_FPS) or 0.0
-    frame_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
-    frame_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
     raw_annotated_path = output_dir / f"{view_label}_annotated_raw.mp4"
     final_annotated_path = output_dir / f"{view_label}_annotated.mp4"
-    writer = _build_writer(raw_annotated_path, fps, frame_width, frame_height) if save_annotated else None
+    writer = None
 
     total_count = 0
     total_weighted_count = 0.0
@@ -274,8 +272,17 @@ def _analyze_single_video(
                     for class_name, count in frame_counts.items():
                         class_breakdown[class_name] = max(class_breakdown[class_name], count)
 
-            if writer is not None:
-                writer.write(result.plot())
+            if save_annotated:
+                annotated_frame = result.plot()
+                if writer is None:
+                    writer = _build_writer(
+                        raw_annotated_path,
+                        _sampled_fps(fps=fps, frame_stride=frame_stride),
+                        annotated_frame.shape[1],
+                        annotated_frame.shape[0],
+                    )
+                if writer is not None:
+                    writer.write(annotated_frame)
     finally:
         capture.release()
         if writer is not None:
@@ -378,6 +385,12 @@ def _build_writer(target_path: Path, fps: float, frame_width: int, frame_height:
     return cv2.VideoWriter(str(target_path), fourcc, safe_fps, (frame_width, frame_height))
 
 
+def _sampled_fps(fps: float, frame_stride: int) -> float:
+    if fps <= 0:
+        return 15.0
+    return max(fps / max(frame_stride, 1), 1.0)
+
+
 def _load_emergency_model(model_path: Path):
     try:
         if YOLOWorld is not None:
@@ -470,6 +483,10 @@ def _finalize_annotated_video(raw_path: Path, final_path: Path) -> None:
         "-an",
         "-c:v",
         "libx264",
+        "-preset",
+        "veryfast",
+        "-movflags",
+        "+faststart",
         "-pix_fmt",
         "yuv420p",
         str(final_path),
