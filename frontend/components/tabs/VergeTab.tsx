@@ -2,11 +2,9 @@
 
 import { motion } from "framer-motion";
 import { Activity, Car, FileText, Siren, TrendingUp, Video, Zap } from "lucide-react";
-import Image from "next/image";
 import { ALERTS, VIOLATIONS } from "@/lib/data";
 import TrafficUploadPanel from "@/components/traffic/TrafficUploadPanel";
-// import trafficImage from "../../traffic.jpeg";
-import cctvImage from "../../cctv.png";
+import TrafficMonitor from "../TrafficMonitor";
 
 export default function VergeTab() {
   return (
@@ -123,9 +121,10 @@ export default function VergeTab() {
             </div>
           </div>
 
-          <div className="relative aspect-video rounded-3xl">
-            <Image src={cctvImage} alt="CCTV footage" fill className="absolute inset-0 object-cover"/>
-          </div>
+          <TrafficMonitor />
+          {/* <div className="relative aspect-video rounded-3xl"> */}
+          {/* <Image src={cctvImage} alt="CCTV footage" fill className="absolute inset-0 object-cover"/> */}
+          {/* </div> */}
 
           {/* <div className="relative aspect-video rounded-3xl overflow-hidden bg-zinc-900 border border-white/10 shadow-2xl group ring-1 ring-white/5">
             <Image
@@ -325,11 +324,10 @@ export default function VergeTab() {
                     <td className="px-6 py-4 text-white/80">{violation.location}</td>
                     <td className="px-6 py-4 text-muted-foreground">{violation.time}</td>
                     <td className="px-6 py-4 text-right">
-                      <span className={`text-xs font-medium px-2 py-1 rounded-md ${
-                        violation.status === "Logged" ? "text-green-400 bg-green-400/10" :
+                      <span className={`text-xs font-medium px-2 py-1 rounded-md ${violation.status === "Logged" ? "text-green-400 bg-green-400/10" :
                         violation.status === "Alert Sent" ? "text-blue-400 bg-blue-400/10" :
-                        "text-yellow-400 bg-yellow-400/10"
-                      }`}>
+                          "text-yellow-400 bg-yellow-400/10"
+                        }`}>
                         {violation.status}
                       </span>
                     </td>
