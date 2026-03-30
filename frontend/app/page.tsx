@@ -19,8 +19,9 @@ export default function Home() {
   const heroTextY = useTransform(heroScrollYProgress, [0, 1], [0, -200]);
   const heroTextOpacity = useTransform(heroScrollYProgress, [0, 0.5], [1, 0]);
 
-  // Dashboard Image: y: [0, -250]
-  const dashboardY = useTransform(heroScrollYProgress, [0, 1], [0, -250]);
+  // Keep the dashboard anchored in the scene and let it drift down slightly
+  // so the glass HUD reads as attached to the panel instead of floating up.
+  const dashboardY = useTransform(heroScrollYProgress, [0, 1], [0, 140]);
 
   // Section 2 scroll-driven reveal
   const testimonialRef = useRef<HTMLDivElement>(null);
@@ -193,7 +194,7 @@ export default function Home() {
 
           <motion.div
             style={{ y: dashboardY }}
-            className="absolute left-0 right-0 top-[10%] mx-auto w-full max-w-5xl px-4 flex justify-center mix-blend-luminosity will-change-transform"
+            className="absolute bottom-[6%] left-0 right-0 mx-auto w-full max-w-5xl px-4 flex justify-center mix-blend-luminosity will-change-transform"
           >
             <div className="relative w-[90%] md:w-full h-auto rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10">
               <Image
