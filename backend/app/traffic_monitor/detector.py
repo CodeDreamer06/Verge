@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -115,7 +116,9 @@ def _analyze_single_video(
     fps = capture.get(cv2.CAP_PROP_FPS) or 0.0
     frame_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
     frame_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
-    writer = _build_writer(output_dir, view_label, fps, frame_width, frame_height) if save_annotated else None
+    raw_annotated_path = output_dir / f"{view_label}_annotated_raw.mp4"
+    final_annotated_path = output_dir / f"{view_label}_annotated.mp4"
+    writer = _build_writer(raw_annotated_path, fps, frame_width, frame_height) if save_annotated else None
 
     total_count = 0
     total_weighted_count = 0.0
@@ -182,6 +185,7 @@ def _analyze_single_video(
         capture.release()
         if writer is not None:
             writer.release()
+            _finalize_annotated_video(raw_annotated_path, final_annotated_path)
 
     average_vehicle_count = (total_count / sampled_frames) if sampled_frames else 0.0
     weighted_average_load = (total_weighted_count / sampled_frames) if sampled_frames else 0.0
@@ -190,7 +194,7 @@ def _analyze_single_video(
         class_breakdown["vehicle_estimate"] = peak_count
 
     congestion_score = round((weighted_average_load * 0.65) + (peak_weighted * 0.35), 3)
-    annotated_video = str(output_dir / f"{view_label}_annotated.mp4") if save_annotated else None
+    annotated_video = str(final_annotated_path) if save_annotated else None
 
     return ViewAnalysis(
         view=view_label,
@@ -220,10 +224,33 @@ def _count_detections(result) -> tuple[int, float]:
     return len(valid_names), float(weighted)
 
 
-def _build_writer(output_dir: Path, view_label: str, fps: float, frame_width: int, frame_height: int):
+def _build_writer(target_path: Path, fps: float, frame_width: int, frame_height: int):
     if not frame_width or not frame_height:
         return None
-    target_path = output_dir / f"{view_label}_annotated.mp4"
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     safe_fps = fps if fps > 0 else 15.0
     return cv2.VideoWriter(str(target_path), fourcc, safe_fps, (frame_width, frame_height))
+
+
+def _finalize_annotated_video(raw_path: Path, final_path: Path) -> None:
+    if not raw_path.exists():
+        return
+
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(raw_path),
+        "-an",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        str(final_path),
+    ]
+
+    try:
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        raw_path.unlink(missing_ok=True)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        raw_path.replace(final_path)

@@ -1,8 +1,8 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useMemo, useState } from "react";
-import { LoaderCircle, RefreshCw, Upload, Video } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { LoaderCircle, Play, RefreshCw, Upload, Video } from "lucide-react";
 
 type ViewSummary = {
   view: string;
@@ -37,6 +37,7 @@ const VIDEO_SLOTS = [
 ] as const;
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_TRAFFIC_API_URL ?? "http://127.0.0.1:8000";
+const PLAYBACK_SPEEDS = [1, 2, 3, 5] as const;
 
 export default function TrafficUploadPanel() {
   const [files, setFiles] = useState<Record<string, File | null>>({
@@ -48,6 +49,9 @@ export default function TrafficUploadPanel() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResponse | null>(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState<(typeof PLAYBACK_SPEEDS)[number]>(1);
+  const [simulationSeconds, setSimulationSeconds] = useState(0);
+  const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   const selectedFiles = useMemo(
     () => VIDEO_SLOTS.map((slot) => files[slot.key]).filter((file): file is File => Boolean(file)),
@@ -55,6 +59,54 @@ export default function TrafficUploadPanel() {
   );
 
   const canSubmit = selectedFiles.length === VIDEO_SLOTS.length && !isSubmitting;
+  const cyclePhases = useMemo(() => {
+    if (!result) {
+      return [];
+    }
+    return result.views.map((view) => ({
+      view: view.view,
+      seconds: result.recommended_green_times_seconds[view.view] ?? 0,
+    }));
+  }, [result]);
+
+  const activeSignal = useMemo(() => {
+    if (!result || cyclePhases.length === 0) {
+      return null;
+    }
+    const cycleDuration = result.cycle_time_seconds || 1;
+    const cyclePosition = simulationSeconds % cycleDuration;
+    let elapsed = 0;
+    for (const phase of cyclePhases) {
+      elapsed += phase.seconds;
+      if (cyclePosition < elapsed) {
+        return {
+          currentView: phase.view,
+          secondsRemaining: Math.ceil(elapsed - cyclePosition),
+        };
+      }
+    }
+    const lastPhase = cyclePhases[cyclePhases.length - 1];
+    return lastPhase ? { currentView: lastPhase.view, secondsRemaining: lastPhase.seconds } : null;
+  }, [cyclePhases, result, simulationSeconds]);
+
+  useEffect(() => {
+    if (!result) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      setSimulationSeconds((current) => current + 0.2 * playbackSpeed);
+    }, 200);
+    return () => window.clearInterval(interval);
+  }, [playbackSpeed, result]);
+
+  useEffect(() => {
+    Object.values(videoRefs.current).forEach((video) => {
+      if (!video) {
+        return;
+      }
+      video.playbackRate = playbackSpeed;
+    });
+  }, [playbackSpeed, result]);
 
   const updateFile = (slotKey: string, file: File | null) => {
     setFiles((current) => ({ ...current, [slotKey]: file }));
@@ -87,6 +139,7 @@ export default function TrafficUploadPanel() {
         throw new Error("detail" in payload ? payload.detail || "Analysis failed." : "Analysis failed.");
       }
       setResult(payload as AnalysisResponse);
+      setSimulationSeconds(0);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Analysis failed.");
     } finally {
@@ -229,6 +282,79 @@ export default function TrafficUploadPanel() {
             </div>
           </div>
 
+          <div className="rounded-3xl border border-amber-300/20 bg-[linear-gradient(180deg,rgba(251,191,36,0.12),rgba(255,255,255,0.03))] p-5">
+            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.24em] text-amber-200/70">Signal Demo</p>
+                <h4 className="mt-2 text-lg font-semibold text-white">Four-way traffic light simulation</h4>
+                <p className="mt-2 text-sm text-white/60">
+                  Demo speed controls affect both the signal cycle preview and the annotated video playback rate.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {PLAYBACK_SPEEDS.map((speed) => (
+                  <button
+                    key={speed}
+                    type="button"
+                    onClick={() => setPlaybackSpeed(speed)}
+                    className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                      playbackSpeed === speed
+                        ? "border-amber-200 bg-amber-200 text-black"
+                        : "border-white/10 bg-black/20 text-white/70 hover:bg-white/10 hover:text-white"
+                    }`}
+                  >
+                    {speed}x
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-4 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white/70">
+              Active green:{" "}
+              <span className="font-semibold text-emerald-300">
+                {activeSignal?.currentView.replace("_", " ").toUpperCase() ?? "N/A"}
+              </span>
+              {activeSignal ? <span className="ml-3 text-white/50">{activeSignal.secondsRemaining}s remaining</span> : null}
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {result.views.map((view) => {
+                const isActive = activeSignal?.currentView === view.view;
+                return (
+                  <div
+                    key={`${view.view}-signal`}
+                    className={`rounded-3xl border p-4 transition-colors ${
+                      isActive ? "border-emerald-300/40 bg-emerald-400/10" : "border-white/10 bg-black/20"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">{view.view.replace("_", " ")}</p>
+                        <p className="mt-2 text-sm text-white/70">
+                          green {result.recommended_green_times_seconds[view.view] ?? 0}s
+                        </p>
+                      </div>
+                      <Play className={`h-4 w-4 ${isActive ? "text-emerald-300" : "text-white/35"}`} />
+                    </div>
+                    <div className="mt-5 flex items-center gap-3">
+                      <span className={`h-5 w-5 rounded-full ${!isActive ? "bg-red-500 shadow-[0_0_18px_rgba(239,68,68,0.65)]" : "bg-red-500/25"}`} />
+                      <span className={`h-5 w-5 rounded-full ${isActive ? "bg-amber-300/30" : "bg-amber-300/15"}`} />
+                      <span className={`h-5 w-5 rounded-full ${isActive ? "bg-emerald-400 shadow-[0_0_20px_rgba(74,222,128,0.7)]" : "bg-emerald-400/20"}`} />
+                    </div>
+                    <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className={`h-full rounded-full ${isActive ? "bg-emerald-300" : "bg-white/20"}`}
+                        style={{
+                          width: `${Math.min(((result.recommended_green_times_seconds[view.view] ?? 0) / result.cycle_time_seconds) * 100, 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           <div>
             <div className="mb-4 flex items-center justify-between">
               <div>
@@ -244,7 +370,15 @@ export default function TrafficUploadPanel() {
                     <p className="mt-1 text-xs text-white/45">{Object.entries(view.class_breakdown).map(([label, count]) => `${label}: ${count}`).join(" · ") || "No vehicles detected"}</p>
                   </div>
                   {view.annotated_video_url ? (
-                    <video className="aspect-video w-full bg-black" src={view.annotated_video_url} controls preload="metadata" />
+                    <video
+                      ref={(element) => {
+                        videoRefs.current[view.view] = element;
+                      }}
+                      className="aspect-video w-full bg-black"
+                      src={view.annotated_video_url}
+                      controls
+                      preload="metadata"
+                    />
                   ) : (
                     <div className="flex aspect-video items-center justify-center text-sm text-white/40">Annotated video unavailable</div>
                   )}
