@@ -9,18 +9,18 @@ interface Detection {
 
 const TrafficMonitor = () => {
     const detections: Detection[] = [
-        { label: 'Bus', color: 'border-green-500 bg-green-500', top: '15%', left: '34%', width: '16%', height: '22%' },
-        { label: 'Car', color: 'border-red-500 bg-red-500', top: '41%', left: '13%', width: '15%', height: '21%' },
-        { label: 'Taxi', color: 'border-yellow-500 bg-yellow-500', top: '52%', left: '48%', width: '15%', height: '22%' },
-        { label: 'Taxi', color: 'border-yellow-500 bg-yellow-500', top: '43%', left: '80%', width: '11%', height: '14%' },
-        { label: 'Taxi', color: 'border-yellow-500 bg-yellow-500', top: '28%', left: '72%', width: '9%', height: '11%' },
-        { label: 'Taxi', color: 'border-yellow-500 bg-yellow-500', top: '68%', left: '72%', width: '14%', height: '21%' },
+        { label: 'Bus', color: 'border-green-500 bg-green-500', top: '5%', left: '34.5%', width: '17%', height: '21%' },
+        { label: 'Car', color: 'border-red-500 bg-red-500', top: '41%', left: '13.5%', width: '15%', height: '21%' },
+        { label: 'Taxi', color: 'border-yellow-500 bg-yellow-500', top: '52%', left: '48.1%', width: '16.5%', height: '22%' },
+        { label: 'Taxi', color: 'border-yellow-500 bg-yellow-500', top: '43%', left: '78.5%', width: '11%', height: '14%' },
+        { label: 'Taxi', color: 'border-yellow-500 bg-yellow-500', top: '29%', left: '72%', width: '9%', height: '11%' },
+        { label: 'Taxi', color: 'border-yellow-500 bg-yellow-500', top: '68.5%', left: '72.5%', width: '16.9%', height: '21%' },
         { label: 'People', color: 'border-pink-500 bg-pink-500', top: '23%', left: '14%', width: '10%', height: '12%' },
-        { label: 'Motorcycle', color: 'border-cyan-500 bg-cyan-500', top: '44%', left: '69%', width: '6%', height: '13%' },
+        { label: 'Motorcycle', color: 'border-cyan-500 bg-cyan-500', top: '44%', left: '69%', width: '6.5%', height: '13%' },
     ];
 
     return (
-        <div className="relative w-full aspect-video bg-slate-900 rounded-xl overflow-hidden font-sans text-white select-none">
+        <div className="relative w-full aspect-video bg-slate-900 rounded-3xl overflow-hidden font-sans text-white select-none">
             {/* Background Layer with Blue Tint */}
             <div
                 className="absolute inset-0 bg-cover bg-center transition-opacity"

@@ -1,10 +1,56 @@
 "use client";
 
 import { motion, useScroll, useTransform } from "framer-motion";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Activity, ShieldAlert, Car, Leaf, BarChart3, Clock, ArrowRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRef } from "react";
+
+const features = [
+  {
+    title: "Live Intersections",
+    description: "AI-generated bounding boxes for vehicle classification over 4K intersection feeds in real-time.",
+    icon: Activity,
+    color: "text-blue-400",
+  },
+  {
+    title: "Incident Preemption",
+    description: "Automated overrides of traffic lights to instantly clear paths for emergency response vehicles.",
+    icon: ShieldAlert,
+    color: "text-red-400",
+  },
+  {
+    title: "Parking Intelligence",
+    description: "Real-time spot tracking showing available, occupied, and overstay violations dynamically.",
+    icon: Car,
+    color: "text-emerald-400",
+  },
+  {
+    title: "Environmental Analytics",
+    description: "AQI monitoring combined with carbon emissions offsets estimation per congestion level.",
+    icon: Leaf,
+    color: "text-green-400",
+  },
+  {
+    title: "Queue Forecasting",
+    description: "Continuous estimation of queue lengths using predictive AI to optimize green light duration.",
+    icon: Clock,
+    color: "text-purple-400",
+  },
+  {
+    title: "Automated Reports",
+    description: "Filterable grids and exported insights covering efficiency and violation spikes system-wide.",
+    icon: BarChart3,
+    color: "text-orange-400",
+  },
+];
+
+const stats = [
+  { value: "30%", label: "Wait Time Reduction" },
+  { value: "5s", label: "Emergency Preemption" },
+  { value: "100+", label: "Crossroads Monitored" },
+  { value: "24/7", label: "Automated Violation Tracing" },
+];
 
 export default function Home() {
   const sectionRef = useRef<HTMLDivElement>(null);
@@ -212,6 +258,88 @@ export default function Home() {
         </motion.div>
       </section>
 
+      {/* Stats Section */}
+      <section className="relative py-16 md:py-24 border-b border-white/5 bg-white/[0.01]">
+        <div className="max-w-7xl mx-auto px-8 md:px-28">
+           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12">
+             {stats.map((stat, idx) => (
+               <motion.div 
+                 key={idx}
+                 initial={{ opacity: 0, scale: 0.95 }}
+                 whileInView={{ opacity: 1, scale: 1 }}
+                 viewport={{ once: true, margin: "-100px" }}
+                 transition={{ duration: 0.5, delay: idx * 0.1 }}
+                 className="flex flex-col items-center text-center"
+               >
+                 <span className="text-4xl md:text-5xl font-medium text-foreground mb-2">{stat.value}</span>
+                 <span className="text-sm font-medium text-muted-foreground">{stat.label}</span>
+               </motion.div>
+             ))}
+           </div>
+        </div>
+      </section>
+
+      {/* Features Section */}
+      <section className="relative py-24 md:py-32 px-8 md:px-28 z-40 bg-background overflow-hidden relative border-b border-white/5">
+        <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-blue-500/[0.03] blur-[100px] rounded-full pointer-events-none -z-10 translate-x-1/2 -translate-y-1/2"></div>
+        <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-purple-500/[0.03] blur-[100px] rounded-full pointer-events-none -z-10 -translate-x-1/2 translate-y-1/2"></div>
+
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16 md:mb-24">
+             <motion.div
+               initial={{ opacity: 0, y: 10 }}
+               whileInView={{ opacity: 1, y: 0 }}
+               viewport={{ once: true }}
+               transition={{ duration: 0.5 }}
+               className="inline-block bg-white/5 border border-white/10 rounded-full px-4 py-1.5 text-sm font-medium text-muted-foreground mb-6"
+             >
+               Platform Capabilities
+             </motion.div>
+             <motion.h2 
+               initial={{ opacity: 0, y: 20 }}
+               whileInView={{ opacity: 1, y: 0 }}
+               viewport={{ once: true }}
+               transition={{ duration: 0.6, delay: 0.1 }}
+               className="text-4xl md:text-5xl lg:text-6xl tracking-tight font-medium mb-6 text-foreground"
+             >
+               Omnipresent Vision. <br className="md:hidden" /><span className="text-muted-foreground">Actionable Intelligence.</span>
+             </motion.h2>
+             <motion.p
+               initial={{ opacity: 0, y: 20 }}
+               whileInView={{ opacity: 1, y: 0 }}
+               viewport={{ once: true }}
+               transition={{ duration: 0.6, delay: 0.2 }}
+               className="text-lg text-muted-foreground max-w-2xl mx-auto"
+             >
+               Verge is equipped with advanced AI models that not only see the road, but understand it. Uncover patterns, predict congestion, and react to incidents instantaneously.
+             </motion.p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+            {features.map((feature, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-50px" }}
+                transition={{ duration: 0.5, delay: idx * 0.1 }}
+                whileHover={{ y: -5 }}
+                className="group relative p-8 rounded-3xl bg-white/[0.02] border border-white/5 hover:border-white/10 hover:bg-white/[0.04] transition-all duration-300 overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-white/[0.02] rounded-full blur-3xl group-hover:bg-white/[0.05] transition-colors translate-x-1/2 -translate-y-1/2" />
+                <div className="mb-6 inline-flex p-3 rounded-2xl bg-white/5 ring-1 ring-white/10 group-hover:scale-110 transition-transform duration-300">
+                  <feature.icon className={`w-6 h-6 ${feature.color} opacity-90 group-hover:opacity-100 transition-opacity`} />
+                </div>
+                <h3 className="text-xl font-medium text-foreground mb-3">{feature.title}</h3>
+                <p className="text-muted-foreground leading-relaxed text-sm md:text-base">
+                  {feature.description}
+                </p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Section 2: Testimonial */}
       <section
         ref={testimonialRef}
@@ -277,6 +405,64 @@ export default function Home() {
 
         {/* Subtle background glow effect behind testimonial */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-white/[0.02] rounded-full blur-3xl pointer-events-none -z-10 dark:block hidden"></div>
+      </section>
+
+      {/* Final CTA & Footer */}
+      <section className="relative pt-24 pb-12 px-8 md:px-28 z-40 bg-background border-t border-white/5 overflow-hidden">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[400px] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/10 via-background to-background pointer-events-none -z-10"></div>
+        
+        <div className="max-w-4xl mx-auto text-center mb-32">
+          <motion.h2 
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="text-4xl md:text-5xl font-medium mb-8 text-foreground"
+          >
+            Ready to optimize your city?
+          </motion.h2>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, delay: 0.1 }}
+            className="flex flex-col sm:flex-row items-center justify-center gap-4"
+          >
+            <Link
+              href="/dashboard"
+              className="group flex items-center gap-2 bg-foreground text-background rounded-full px-8 py-4 text-base font-medium shadow-[0_0_40px_-10px_rgba(255,255,255,0.3)] hover:shadow-[0_0_60px_-10px_rgba(255,255,255,0.4)] transition-all hover:scale-105 active:scale-95"
+            >
+              Launch Live Dashboard
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </Link>
+            <Link
+              href="mailto:contact@verge.city"
+              className="bg-white/5 hover:bg-white/10 text-foreground border border-white/10 rounded-full px-8 py-4 text-base font-medium transition-all hover:scale-105 active:scale-95 backdrop-blur-md"
+            >
+              Contact Sales
+            </Link>
+          </motion.div>
+        </div>
+
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between pt-8 border-t border-white/5 text-sm text-muted-foreground gap-4">
+          <div className="flex items-center gap-3">
+             <div className="relative w-6 h-6 rounded overflow-hidden opacity-80">
+                <Image
+                  src="/verge-logo.png"
+                  alt="Verge Logo"
+                  fill
+                  className="object-cover"
+                />
+              </div>
+             <span>© 2026 Verge Systems, Inc. All rights reserved.</span>
+          </div>
+          <div className="flex items-center gap-6">
+            <Link href="#" className="hover:text-foreground transition-colors">Privacy Policy</Link>
+            <Link href="#" className="hover:text-foreground transition-colors">Terms of Service</Link>
+            <Link href="#" className="hover:text-foreground transition-colors">Twitter</Link>
+            <Link href="#" className="hover:text-foreground transition-colors">GitHub</Link>
+          </div>
+        </div>
       </section>
     </main>
   );
