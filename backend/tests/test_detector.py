@@ -1,5 +1,3 @@
-import sys
-import types
 from collections import Counter
 from pathlib import Path
 
@@ -36,128 +34,34 @@ def test_dominant_signal_state_uses_most_common_value():
     assert detector._dominant_signal_state(Counter({"red": 3, "green": 1})) == "red"
 
 
-def test_load_plate_model_uses_yolov5_adapter_for_legacy_checkpoint(monkeypatch, tmp_path):
-    legacy_checkpoint = tmp_path / "plate_detection.pt"
-    legacy_checkpoint.write_bytes(b"weights")
+def test_extract_plate_crop_uses_scene_model_only():
+    frame = np.ones((16, 16, 3), dtype=np.uint8)
 
-    def reject_legacy_checkpoint(model_path: str):
-        raise RuntimeError(
-            "ERROR /tmp/plate_detection.pt appears to be an Ultralytics YOLOv5 model. "
-            "This model is NOT forwards compatible with YOLOv8."
-        )
+    class FakeTensor:
+        def __init__(self, values):
+            self._values = values
 
-    class FakePredictions:
-        def __init__(self):
-            self.pred = [types.SimpleNamespace(tolist=lambda: [[2.0, 3.0, 8.0, 9.0, 0.91, 0.0]])]
-            self.names = {0: "license plate"}
+        def int(self):
+            return FakeTensor([int(value) for value in self._values])
 
-    class FakeYoloV5Model:
-        names = {0: "license plate"}
+        def tolist(self):
+            return self._values
 
-        def __call__(self, frame, size: int):
-            assert size == 640
-            assert frame.shape == (12, 12, 3)
-            return FakePredictions()
+    class FakeBoxes:
+        cls = FakeTensor([0])
+        xyxy = FakeTensor([[2, 3, 10, 9]])
+        conf = FakeTensor([0.87])
 
-    fake_module = types.SimpleNamespace(load=lambda model_path: FakeYoloV5Model())
+    class FakeSceneModel:
+        def predict(self, frame, conf: float, verbose: bool, imgsz: int):
+            assert frame.shape == (16, 16, 3)
+            assert conf == 0.2
+            assert verbose is False
+            assert imgsz == 640
+            return [type("Result", (), {"boxes": FakeBoxes(), "names": {0: "license plate"}})()]
 
-    monkeypatch.setattr(detector, "PLATE_MODEL_PATH", legacy_checkpoint)
-    monkeypatch.setattr(detector, "YOLO", reject_legacy_checkpoint)
-    monkeypatch.setitem(sys.modules, "yolov5", fake_module)
+    crop, confidence = detector._extract_plate_crop(frame, FakeSceneModel(), conf_threshold=0.1, inference_size=640)
 
-    model = detector._load_plate_model()
-
-    frame = np.ones((12, 12, 3), dtype=np.uint8)
-    result = model.predict(frame, conf=0.4, imgsz=640)[0]
-    crop, confidence = detector._pick_plate_crop(result, frame)
-
-    assert isinstance(model, detector._YoloV5PlateAdapter)
-    assert confidence == 0.91
     assert crop is not None
-
-
-def test_load_plate_model_falls_back_when_yolov5_runtime_is_unavailable(monkeypatch, tmp_path):
-    legacy_checkpoint = tmp_path / "plate_detection.pt"
-    legacy_checkpoint.write_bytes(b"weights")
-
-    monkeypatch.setattr(detector, "PLATE_MODEL_PATH", legacy_checkpoint)
-    monkeypatch.setattr(
-        detector,
-        "YOLO",
-        lambda model_path: (_ for _ in ()).throw(
-            RuntimeError(
-                "ERROR /tmp/plate_detection.pt appears to be an Ultralytics YOLOv5 model. "
-                "This model is NOT forwards compatible with YOLOv8."
-            )
-        ),
-    )
-    monkeypatch.delitem(sys.modules, "yolov5", raising=False)
-
-    real_import = __import__
-
-    def fake_import(name, *args, **kwargs):
-        if name == "yolov5":
-            raise ImportError("No module named 'yolov5'")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr("builtins.__import__", fake_import)
-
-    model = detector._load_plate_model()
-
-    assert isinstance(model, detector._NullPlateModel)
-
-
-def test_load_yolov5_plate_model_forces_legacy_torch_deserialization(monkeypatch, tmp_path):
-    legacy_checkpoint = tmp_path / "plate_detection.pt"
-    legacy_checkpoint.write_bytes(b"weights")
-    captured: dict[str, object] = {}
-
-    class FakeTorchModule:
-        def __init__(self):
-            self.load = self._load
-
-        def _load(self, *args, **kwargs):
-            captured["weights_only"] = kwargs.get("weights_only")
-            return {"ok": True}
-
-    class FakePredictions:
-        pred = []
-        names = {0: "license plate"}
-
-    class FakeYoloV5Model:
-        names = {0: "license plate"}
-
-        def __call__(self, frame, size: int):
-            return FakePredictions()
-
-    def fake_yolov5_load(model_path: str):
-        fake_torch.load(model_path)
-        return FakeYoloV5Model()
-
-    fake_torch = FakeTorchModule()
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
-    monkeypatch.setitem(sys.modules, "yolov5", types.SimpleNamespace(load=fake_yolov5_load))
-
-    model = detector._load_yolov5_plate_model(legacy_checkpoint, RuntimeError("legacy checkpoint"))
-
-    assert isinstance(model, detector._YoloV5PlateAdapter)
-    assert captured["weights_only"] is False
-
-
-def test_infer_plate_checkpoint_family_detects_yolov9_marker(tmp_path):
-    checkpoint = tmp_path / "plate_detection.pt"
-    checkpoint.write_bytes(b"prefix RepNCSPELAN4 middle gelan-c.yaml suffix")
-
-    assert detector._infer_plate_checkpoint_family(checkpoint) == "yolov9"
-
-
-def test_load_plate_model_skips_yolov5_path_for_yolov9_checkpoint(monkeypatch, tmp_path):
-    checkpoint = tmp_path / "plate_detection.pt"
-    checkpoint.write_bytes(b"prefix RepNCSPELAN4 middle gelan-c.yaml suffix")
-
-    monkeypatch.setattr(detector, "PLATE_MODEL_PATH", checkpoint)
-    monkeypatch.setattr(detector, "YOLO", lambda model_path: (_ for _ in ()).throw(AssertionError("should not load")))
-
-    model = detector._load_plate_model()
-
-    assert isinstance(model, detector._NullPlateModel)
+    assert crop.shape == (6, 8, 3)
+    assert confidence == 0.87

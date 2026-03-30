@@ -5,7 +5,6 @@ import logging
 import re
 import shutil
 import subprocess
-from contextlib import contextmanager
 from collections import Counter
 from dataclasses import asdict, dataclass
 from math import ceil
@@ -23,7 +22,6 @@ from .config import (
     KNOWN_SIGNAL_STATES,
     MIN_PLATE_TEXT_LENGTH,
     PLATE_CLASS_NAMES,
-    PLATE_MODEL_PATH,
     STOP_LINE_RATIO,
     TRAFFIC_LIGHT_CLASS_NAMES,
     VEHICLE_CLASS_IDS,
@@ -89,60 +87,6 @@ class _NullEmergencyResult:
     names: dict[int, str] = {}
 
 
-class _NullPlateModel:
-    def predict(self, *args, **kwargs):
-        return [_NullEmergencyResult()]
-
-
-YOLOV9_PLATE_MARKERS = (b"RepNCSPELAN4", b"gelan-c.yaml", b"/yolov9/")
-
-
-class _ListTensor:
-    def __init__(self, values: list):
-        self._values = values
-
-    def int(self):
-        return _ListTensor([int(value) for value in self._values])
-
-    def tolist(self):
-        return self._values
-
-    def __len__(self):
-        return len(self._values)
-
-
-class _YoloV5Boxes:
-    def __init__(self, rows: list[list[float]]):
-        xyxy = [row[:4] for row in rows]
-        conf = [row[4] for row in rows]
-        cls = [row[5] for row in rows]
-        self.xyxy = _ListTensor(xyxy)
-        self.conf = _ListTensor(conf)
-        self.cls = _ListTensor(cls)
-
-
-class _YoloV5Result:
-    def __init__(self, rows: list[list[float]], names):
-        self.boxes = _YoloV5Boxes(rows) if rows else None
-        self.names = names
-
-
-class _YoloV5PlateAdapter:
-    def __init__(self, model):
-        self.model = model
-
-    def predict(self, frame, conf: float, verbose: bool = False, imgsz: int = 640):
-        del verbose
-        self.model.conf = conf
-        results = self.model(frame, size=imgsz)
-        predictions = getattr(results, "pred", [])
-        rows = predictions[0].tolist() if predictions else []
-        names = getattr(results, "names", getattr(self.model, "names", {}))
-        if isinstance(names, list):
-            names = {index: label for index, label in enumerate(names)}
-        return [_YoloV5Result(rows=rows, names=names)]
-
-
 class _NullOcrReader:
     def readtext(self, *args, **kwargs):
         return []
@@ -197,7 +141,6 @@ def analyze_videos(
     output_dir.mkdir(parents=True, exist_ok=True)
     resolved_model = ensure_model(destination=model_path) if model_path else ensure_model()
     emergency_model_path = ensure_model(model_name=EMERGENCY_MODEL_NAME)
-    plate_model = _load_plate_model()
     scene_model = _load_scene_model(emergency_model_path)
     ocr_reader = _load_ocr_reader()
     model = YOLO(str(resolved_model))
@@ -211,7 +154,6 @@ def analyze_videos(
             model=model,
             emergency_model=emergency_model,
             scene_model=scene_model,
-            plate_model=plate_model,
             ocr_reader=ocr_reader,
             video_path=video_path,
             output_dir=output_dir,
@@ -276,7 +218,6 @@ def _analyze_single_video(
     model: YOLO,
     emergency_model,
     scene_model,
-    plate_model,
     ocr_reader,
     video_path: Path,
     output_dir: Path,
@@ -416,7 +357,6 @@ def _analyze_single_video(
                             vehicle_crop = _extract_crop(inference_frame, xyxy)
                             plate_text, plate_confidence = _read_plate_text(
                                 frame=vehicle_crop,
-                                plate_model=plate_model,
                                 scene_model=scene_model,
                                 ocr_reader=ocr_reader,
                                 conf_threshold=conf_threshold,
@@ -442,7 +382,6 @@ def _analyze_single_video(
                             vehicle_crop = _extract_crop(inference_frame, xyxy)
                             plate_text, plate_confidence = _read_plate_text(
                                 frame=vehicle_crop,
-                                plate_model=plate_model,
                                 scene_model=scene_model,
                                 ocr_reader=ocr_reader,
                                 conf_threshold=conf_threshold,
@@ -530,92 +469,6 @@ def _resize_frame_for_inference(frame, inference_size: int):
     target_width = max(1, ceil(width * scale))
     target_height = max(1, ceil(height * scale))
     return cv2.resize(frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
-
-
-def _load_plate_model():
-    if PLATE_MODEL_PATH.exists():
-        inferred_family = _infer_plate_checkpoint_family(PLATE_MODEL_PATH)
-        if inferred_family == "yolov9":
-            logger.warning(
-                "Plate model at %s appears to be a YOLOv9/GELAN checkpoint. "
-                "The current backend supports Ultralytics YOLOv8 models and optional YOLOv5 checkpoints, "
-                "but this asset requires a YOLOv9 runtime with GELAN modules such as RepNCSPELAN4. "
-                "Falling back to YOLO World plate prompts.",
-                PLATE_MODEL_PATH,
-            )
-            return _NullPlateModel()
-        try:
-            return YOLO(str(PLATE_MODEL_PATH))
-        except Exception as error:
-            if _is_yolov5_checkpoint_error(error):
-                return _load_yolov5_plate_model(PLATE_MODEL_PATH, error)
-            raise
-    logger.info("Plate model not found at %s; falling back to YOLO World plate prompts.", PLATE_MODEL_PATH)
-    return _NullPlateModel()
-
-
-def _is_yolov5_checkpoint_error(error: Exception) -> bool:
-    message = str(error).lower()
-    return "yolov5 model" in message and "not forwards compatible" in message
-
-
-def _infer_plate_checkpoint_family(model_path: Path) -> str | None:
-    if _file_contains_markers(model_path, YOLOV9_PLATE_MARKERS):
-        return "yolov9"
-    return None
-
-
-def _file_contains_markers(model_path: Path, markers: tuple[bytes, ...], chunk_size: int = 1024 * 1024) -> bool:
-    overlap = max(len(marker) for marker in markers) - 1
-    tail = b""
-    with model_path.open("rb") as handle:
-        while chunk := handle.read(chunk_size):
-            haystack = tail + chunk
-            if any(marker in haystack for marker in markers):
-                return True
-            tail = haystack[-overlap:] if overlap > 0 else b""
-    return False
-
-
-def _load_yolov5_plate_model(model_path: Path, original_error: Exception):
-    try:
-        import torch
-        import yolov5
-    except ImportError as import_error:
-        logger.warning(
-            "Plate model at %s is a YOLOv5 checkpoint, but the YOLOv5 runtime is unavailable (%s). "
-            "Original load error: %s. Falling back to YOLO World plate prompts.",
-            model_path,
-            import_error,
-            original_error,
-        )
-        return _NullPlateModel()
-
-    try:
-        with _allow_trusted_legacy_torch_load(torch):
-            return _YoloV5PlateAdapter(yolov5.load(str(model_path)))
-    except Exception as error:
-        logger.warning(
-            "Failed to load YOLOv5 plate model at %s (%s). Falling back to YOLO World plate prompts.",
-            model_path,
-            error,
-        )
-        return _NullPlateModel()
-
-
-@contextmanager
-def _allow_trusted_legacy_torch_load(torch_module):
-    original_torch_load = torch_module.load
-
-    def _patched_torch_load(*args, **kwargs):
-        kwargs.setdefault("weights_only", False)
-        return original_torch_load(*args, **kwargs)
-
-    torch_module.load = _patched_torch_load
-    try:
-        yield
-    finally:
-        torch_module.load = original_torch_load
 
 
 def _load_scene_model(model_path: Path):
@@ -727,13 +580,12 @@ def _extract_crop(frame, xyxy: list[float]):
     return frame[y1:y2, x1:x2]
 
 
-def _read_plate_text(frame, plate_model, scene_model, ocr_reader, conf_threshold: float, inference_size: int) -> tuple[str, float | None]:
+def _read_plate_text(frame, scene_model, ocr_reader, conf_threshold: float, inference_size: int) -> tuple[str, float | None]:
     if frame.size == 0:
         return "Unknown", None
 
     plate_crop, plate_confidence = _extract_plate_crop(
         frame=frame,
-        plate_model=plate_model,
         scene_model=scene_model,
         conf_threshold=conf_threshold,
         inference_size=inference_size,
@@ -743,12 +595,11 @@ def _read_plate_text(frame, plate_model, scene_model, ocr_reader, conf_threshold
     return text, plate_confidence if plate_confidence is not None else confidence
 
 
-def _extract_plate_crop(frame, plate_model, scene_model, conf_threshold: float, inference_size: int):
-    for model in (plate_model, scene_model):
-        result = model.predict(frame, conf=max(conf_threshold, 0.2), verbose=False, imgsz=inference_size)[0]
-        crop, confidence = _pick_plate_crop(result, frame)
-        if crop is not None:
-            return crop, confidence
+def _extract_plate_crop(frame, scene_model, conf_threshold: float, inference_size: int):
+    result = scene_model.predict(frame, conf=max(conf_threshold, 0.2), verbose=False, imgsz=inference_size)[0]
+    crop, confidence = _pick_plate_crop(result, frame)
+    if crop is not None:
+        return crop, confidence
     return None, None
 
 
