@@ -2,8 +2,8 @@
 
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, LoaderCircle, Play, RefreshCw, Siren, Upload, Video } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { AlertTriangle, CheckCircle2, LoaderCircle, MapPin, Video, Upload, Activity, Zap, Siren, Target, BarChart3, Clock, ShieldAlert } from "lucide-react";
 
 type EmergencyEvent = {
   label: string;
@@ -57,19 +57,19 @@ const PLAYBACK_SPEEDS = [1, 2, 3, 5] as const;
 const PROCESSING_STEPS = [
   {
     title: "Uploading CCTV feeds",
-    detail: "Pushing the selected files to the traffic-analysis service.",
+    detail: "Pushing selected files to traffic-analysis node.",
   },
   {
     title: "Detecting lane traffic",
-    detail: "Running the base YOLO pass for cars, buses, trucks, and lane load.",
+    detail: "YOLO pass for vehicles and lane load.",
   },
   {
     title: "Scanning emergency vehicles",
-    detail: "Checking for ambulance, fire truck, police car, and related priority classes.",
+    detail: "Priority class detection (ambulance, fire truck).",
   },
   {
     title: "Computing signal plan",
-    detail: "Combining congestion and emergency priority into the final green-light sequence.",
+    detail: "Synthesizing congestion and priority.",
   },
 ] as const;
 
@@ -256,55 +256,66 @@ export default function TrafficUploadPanel() {
   };
 
   return (
-    <div className="rounded-[28px] border border-cyan-400/20 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-5 shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
-      <div className="mb-5 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+    <div className="flex flex-col gap-6 w-full animate-in fade-in duration-500 pb-12">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-300/80">Junction Upload Console</p>
-          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-white">Feed four CCTV clips into the detector</h3>
-          <p className="mt-2 max-w-2xl text-sm text-white/65">
-            Upload the north, east, south, and west views. The Python service runs a fast YOLO traffic pass plus emergency-vehicle sampling, then returns the signal plan, JSON summary, and sampled annotated clips.
+          <h2 className="text-2xl font-semibold tracking-tight">Junction Upload Console</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Feed synchronized CCTV clips into the detection and signaling node.
           </p>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white/70">
-          API: <span className="font-mono text-cyan-300">{API_BASE_URL}</span>
+        <div className="flex bg-white/5 px-3 py-1.5 rounded-lg border border-white/10 items-center gap-2">
+          <Activity className="w-4 h-4 text-emerald-400" />
+          <span className="text-xs font-medium text-white/70 font-mono">{API_BASE_URL}</span>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {uploadPreviews.map((slot) => (
-            <label
+      <form onSubmit={handleSubmit} className="bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col gap-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-medium flex items-center gap-2 text-white">
+            <Video className="w-4 h-4 text-blue-400" />
+            Feed Synchronization
+          </h3>
+          <span className="text-xs font-semibold text-white bg-white/10 px-3 py-1 rounded-full uppercase tracking-wider">
+            {selectedFiles.length}/4 Feeds Ready
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {uploadPreviews.map((slot, i) => (
+            <motion.label
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
               key={slot.key}
-              className="group flex min-h-40 cursor-pointer flex-col justify-between rounded-3xl border border-white/10 bg-black/30 p-4 transition-colors hover:border-cyan-300/40 hover:bg-black/40"
+              className="group relative cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-black/40 p-4 transition-all hover:border-blue-500/50 hover:bg-black/60 flex flex-col gap-4 min-h-[160px]"
             >
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-white">{slot.label}</span>
-                <Video className="h-4 w-4 text-cyan-300/80" />
+              <div className="flex items-center justify-between z-10">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-blue-400 transition-colors">{slot.label}</span>
+                {slot.file ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <MapPin className="h-4 w-4 text-white/20" />}
               </div>
-              <div className="space-y-3">
+              
+              <div className="flex-1 flex flex-col items-center justify-center text-center z-10 h-full">
                 {slot.previewUrl ? (
-                  <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/50">
+                  <div className="absolute inset-0 z-0">
                     <video
-                      className="h-24 w-full object-cover"
+                      className="h-full w-full object-cover opacity-40 group-hover:opacity-60 transition-opacity"
                       src={slot.previewUrl}
                       muted
                       playsInline
                       preload="metadata"
                     />
-                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black via-black/50 to-transparent px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-cyan-200">
-                      <span>Preview ready</span>
-                      <span>{slot.file ? formatBytes(slot.file.size) : ""}</span>
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/80 to-transparent p-3 text-left">
+                      <p className="text-[10px] uppercase font-mono text-emerald-300 font-bold truncate">{slot.file?.name}</p>
+                      <p className="text-[10px] text-white/50">{slot.file ? formatBytes(slot.file.size) : ""}</p>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/5 text-cyan-300">
+                  <div className="flex flex-col items-center gap-2 text-white/40 group-hover:text-blue-300 transition-colors">
                     <Upload className="h-6 w-6" />
+                    <p className="text-xs">Drag & Drop or Click</p>
                   </div>
                 )}
-                <div>
-                  <p className="text-sm text-white/85">{slot.file?.name ?? "Choose a video file"}</p>
-                  <p className="mt-1 text-xs text-white/45">MP4 preferred. One synchronized view per slot.</p>
-                </div>
               </div>
               <input
                 type="file"
@@ -312,14 +323,13 @@ export default function TrafficUploadPanel() {
                 className="hidden"
                 onChange={(event) => updateFile(slot.key, event.target.files?.[0] ?? null)}
               />
-            </label>
+            </motion.label>
           ))}
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-white/10 pt-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="text-sm text-white/60">
-            {selectedFiles.length}/4 videos ready
-            {result ? <span className="ml-3 text-cyan-300">Latest run: {result.run_id}</span> : null}
+        <div className="flex flex-col gap-3 pt-2 lg:flex-row lg:items-center lg:justify-between border-t border-white/10 mt-2">
+          <div className="text-sm text-muted-foreground">
+            {result && <span className="flex items-center gap-2">Latest pipeline run: <span className="text-blue-400 font-mono">{result.run_id}</span></span>}
           </div>
           <div className="flex gap-3">
             <button
@@ -329,338 +339,264 @@ export default function TrafficUploadPanel() {
                 setError(null);
                 setResult(null);
               }}
-              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/75 transition-colors hover:bg-white/10 hover:text-white"
+              className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/70 hover:bg-white/10 hover:text-white transition-colors"
             >
-              Reset
+              Reset All
             </button>
             <button
               type="submit"
               disabled={!canSubmit}
-              className="inline-flex items-center gap-2 rounded-xl bg-cyan-300 px-4 py-2 text-sm font-semibold text-black transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-500 hover:bg-blue-400 text-white px-5 py-2 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/30 shadow-lg shadow-blue-500/20"
             >
-              {isSubmitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              {isSubmitting ? "Analyzing..." : "Analyze Junction"}
+              {isSubmitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+              {isSubmitting ? "Processing Sequence..." : "Run AI Analysis"}
             </button>
           </div>
         </div>
       </form>
 
       {error ? (
-        <div className="mt-5 rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-400 flex items-center gap-3">
+          <AlertTriangle className="h-5 w-5" />
+          {error}
+        </motion.div>
       ) : null}
 
       {isSubmitting ? (
-        <div className="mt-6 overflow-hidden rounded-3xl border border-cyan-300/20 bg-[linear-gradient(180deg,rgba(8,47,73,0.65),rgba(5,10,20,0.85))] p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.24em] text-cyan-200/70">Live Processing</p>
-              <h4 className="mt-2 text-lg font-semibold text-white">Traffic and emergency analysis is running</h4>
-              <p className="mt-2 max-w-2xl text-sm text-white/65">
-                The upload flow now prioritizes turnaround time: sparse frame sampling, lower-resolution inference, and lightweight sampled annotated exports.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-right">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Elapsed</p>
-              <p className="mt-2 text-2xl font-semibold text-white">{processingSeconds.toFixed(1)}s</p>
-            </div>
+        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="rounded-2xl border border-white/10 bg-white/5 p-6 flex flex-col gap-6 shadow-sm overflow-hidden">
+          <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+             <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full border border-blue-500/30 bg-blue-500/10 flex items-center justify-center">
+                  <Activity className="w-5 h-5 text-blue-400 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="text-base font-medium text-white">YOLO Inference & Signal Optimization</h4>
+                  <p className="text-xs text-muted-foreground">Synthesizing multiple live feeds to calculate optimal traffic phasing.</p>
+                </div>
+             </div>
+             <div className="text-right">
+                <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Elapsed Time</p>
+                <p className="text-2xl font-semibold font-mono text-white tabular-nums">{processingSeconds.toFixed(1)}s</p>
+             </div>
           </div>
 
-          <div className="mt-5 h-3 overflow-hidden rounded-full bg-white/10">
+          <div className="relative h-2 rounded-full bg-black/40 border border-white/5 overflow-hidden">
             <motion.div
-              className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-sky-300 to-emerald-300"
+              className="absolute top-0 left-0 bottom-0 bg-blue-500"
               animate={{ width: `${estimatedProgress}%` }}
               transition={{ duration: 0.4, ease: "easeOut" }}
             />
           </div>
 
-          <div className="mt-5 grid gap-3 lg:grid-cols-4">
+          <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
             {PROCESSING_STEPS.map((step, index) => {
               const isActive = index === processingStepIndex;
               const isComplete = index < processingStepIndex;
               return (
                 <div
                   key={step.title}
-                  className={`rounded-2xl border p-4 transition-colors ${
+                  className={`rounded-xl border p-4 transition-all duration-300 ${
                     isActive
-                      ? "border-cyan-300/40 bg-cyan-300/10"
+                      ? "border-blue-500/40 bg-blue-500/10 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
                       : isComplete
-                        ? "border-emerald-300/30 bg-emerald-400/10"
-                        : "border-white/10 bg-black/20"
+                        ? "border-green-500/20 bg-green-500/5 text-white/50"
+                        : "border-white/5 bg-black/20 text-white/30"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-white">{step.title}</p>
-                    {isComplete ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-300" />
-                    ) : isActive ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin text-cyan-200" />
-                    ) : (
-                      <div className="h-2 w-2 rounded-full bg-white/25" />
-                    )}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex justify-between items-center">
+                       <p className={`text-xs font-semibold ${isActive ? "text-blue-400" : isComplete ? "text-green-400" : ""}`}>{step.title}</p>
+                       {isComplete ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />
+                        ) : isActive ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin text-blue-400" />
+                        ) : null}
+                    </div>
+                     <p className={`text-[10px] leading-relaxed ${isActive ? "text-blue-200/70" : "text-white/40"}`}>{step.detail}</p>
                   </div>
-                  <p className="mt-2 text-sm text-white/55">{step.detail}</p>
                 </div>
               );
             })}
           </div>
-
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {uploadPreviews.map((slot) => (
-              <div key={`${slot.key}-status`} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-white">{slot.label}</p>
-                  <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-cyan-200">
-                    queued
-                  </span>
-                </div>
-                <p className="mt-2 truncate text-sm text-white/55">{slot.file?.name ?? "No file"}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+        </motion.div>
       ) : null}
 
+      <AnimatePresence>
       {result ? (
-        <div className="mt-6 space-y-6">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
           {result.priority_mode === "emergency_override" && priorityViewSummary ? (
-            <div className="rounded-3xl border border-red-400/30 bg-[linear-gradient(180deg,rgba(239,68,68,0.16),rgba(127,29,29,0.16))] p-5">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-2xl border border-red-300/20 bg-red-500/15 p-3 text-red-100">
-                    <Siren className="h-5 w-5" />
+            <div className="rounded-2xl border border-red-500/30 bg-gradient-to-r from-red-500/20 to-transparent p-5 relative overflow-hidden">
+              <div className="absolute -right-4 -top-4 opacity-10 rotate-12">
+                 <Siren className="w-32 h-32 text-red-500" />
+              </div>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+                <div className="flex items-center gap-4">
+                  <div className="rounded-full bg-red-500/20 p-3 ring-1 ring-red-500/50 animate-pulse">
+                    <Siren className="h-6 w-6 text-red-400" />
                   </div>
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.24em] text-red-100/70">Emergency Override</p>
-                    <h4 className="mt-2 text-lg font-semibold text-white">
-                      {priorityViewSummary.view.replace("_", " ").toUpperCase()} has immediate green-light priority
-                    </h4>
-                    <p className="mt-2 text-sm text-red-50/75">
-                      Strongest match: {priorityViewSummary.strongest_emergency?.label ?? "emergency vehicle"} at{" "}
-                      {Math.round((priorityViewSummary.strongest_emergency?.confidence ?? 0) * 100)}% confidence.
+                    <h4 className="text-base font-semibold text-red-50 flex items-center gap-2">Emergency Override Initiated</h4>
+                    <p className="text-sm text-red-200/80 mt-1">
+                      <span className="font-bold text-red-100 uppercase">{priorityViewSummary.view.replace("_", " ")}</span> has immediate green-light priority.
+                       Detected <span className="font-medium bg-red-500/20 px-1 py-0.5 rounded">{priorityViewSummary.strongest_emergency?.label}</span> at {Math.round((priorityViewSummary.strongest_emergency?.confidence ?? 0) * 100)}% confidence.
                     </p>
                   </div>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/75">
-                  First in sequence: <span className="font-semibold text-emerald-300">{result.priority_view}</span>
+                <div className="bg-red-500/10 border border-red-500/30 px-4 py-2 rounded-lg hidden md:flex items-center gap-3">
+                  <span className="text-xs uppercase font-bold text-red-300 tracking-wider">Priority Sequence: </span>
+                  <span className="text-sm font-semibold text-white uppercase bg-red-500/20 px-2 py-1 rounded">{result.priority_view}</span>
                 </div>
               </div>
             </div>
           ) : null}
 
-          <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="rounded-3xl border border-white/10 bg-black/30 p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Signal Recommendation</p>
-                  <h4 className="mt-2 text-lg font-semibold text-white">Green-light split for the latest run</h4>
-                </div>
-                <a href={result.summary_url} target="_blank" rel="noreferrer" className="text-sm text-cyan-300 hover:text-cyan-200">
-                  Open summary.json
-                </a>
-              </div>
-              <div className="mb-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/65">
-                Sequence:{" "}
-                <span className="font-medium text-white">
-                  {result.signal_sequence.map((view) => view.replace("_", " ").toUpperCase()).join(" -> ")}
-                </span>
-                <span className="ml-3 text-cyan-200">
-                  {result.views.filter((view) => view.emergency_detected).length} emergency views flagged
-                </span>
-              </div>
-              <div className="space-y-3">
-                {Object.entries(result.recommended_green_times_seconds).map(([view, seconds]) => (
-                  <div key={view} className="rounded-2xl border border-white/8 bg-white/5 p-4">
-                    <div className="flex items-center justify-between text-sm text-white/70">
-                      <span className="uppercase tracking-[0.2em]">{view.replace("_", " ")}</span>
-                      <span>{seconds}s green</span>
-                    </div>
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-emerald-300 to-lime-200"
-                        style={{ width: `${Math.min((seconds / result.cycle_time_seconds) * 100, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-1">
-              {result.views.map((view) => (
-                <div key={view.view} className="rounded-3xl border border-white/10 bg-black/30 p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">{view.view.replace("_", " ")}</p>
-                      <h5 className="mt-1 text-base font-semibold text-white">{view.estimated_unique_vehicles} vehicles tracked</h5>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {view.emergency_detected ? (
-                        <div className="rounded-full border border-red-300/25 bg-red-500/10 px-3 py-1 text-xs text-red-100">
-                          emergency detected
+          <div className="grid lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1 space-y-6">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-sm">
+                 <div className="flex items-center justify-between mb-4">
+                   <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                     <Target className="w-4 h-4 text-emerald-400" />
+                     Generated Signal Plan
+                   </h3>
+                   <a href={result.summary_url} target="_blank" rel="noreferrer" className="text-[10px] uppercase tracking-wider font-semibold bg-white/5 hover:bg-white/10 px-2 py-1 rounded-md text-blue-400 hover:text-blue-300 transition-colors">
+                     View JSON
+                   </a>
+                 </div>
+                 
+                 <div className="space-y-3">
+                   {Object.entries(result.recommended_green_times_seconds).map(([view, seconds]) => (
+                      <div key={view} className="relative overflow-hidden rounded-xl border border-white/5 bg-black/40 p-3 hover:border-white/10 transition-colors">
+                        <div className="relative z-10 flex justify-between items-center text-sm font-medium">
+                          <span className="uppercase tracking-widest text-[11px] text-muted-foreground">{view.replace("_", " ")}</span>
+                          <span className="text-white bg-white/10 px-2 py-0.5 rounded text-xs shrink-0">{seconds}s</span>
                         </div>
-                      ) : null}
-                      <div className="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1 text-xs text-cyan-200">
-                        congestion {view.congestion_score}
+                        <div className="absolute left-0 bottom-0 h-0.5 bg-emerald-500/50 transition-all" style={{ width: `${Math.min((seconds / result.cycle_time_seconds) * 100, 100)}%` }} />
                       </div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-sm text-white/70">
-                    <div className="rounded-2xl bg-white/5 p-3">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Average count</p>
-                      <p className="mt-2 text-xl font-semibold text-white">{view.average_vehicle_count}</p>
-                    </div>
-                    <div className="rounded-2xl bg-white/5 p-3">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">Peak count</p>
-                      <p className="mt-2 text-xl font-semibold text-white">{view.peak_vehicle_count}</p>
-                    </div>
-                  </div>
-                  {view.emergency_detected ? (
-                    <div className="mt-3 rounded-2xl border border-red-300/20 bg-red-500/8 p-3 text-sm text-red-50/80">
-                      <p className="font-medium text-red-100">
-                        {Object.entries(view.emergency_counts)
-                          .map(([label, count]) => `${label}: ${count}`)
-                          .join(" · ")}
-                      </p>
-                      <p className="mt-1 text-red-50/60">
-                        Best frame at {view.strongest_emergency?.timestamp_seconds ?? 0}s with{" "}
-                        {Math.round((view.strongest_emergency?.confidence ?? 0) * 100)}% confidence.
-                      </p>
-                    </div>
-                  ) : null}
+                   ))}
+                   <div className="pt-3 border-t border-white/5 mt-3 flex justify-between items-center">
+                     <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold">Total Cycle</p>
+                     <p className="text-sm text-white font-mono bg-white/5 px-2 py-0.5 rounded">{result.cycle_time_seconds}s</p>
+                   </div>
+                 </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-blue-400" />
+                    Detection Profiling
+                  </h3>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-amber-300/20 bg-[linear-gradient(180deg,rgba(251,191,36,0.12),rgba(255,255,255,0.03))] p-5">
-            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.24em] text-amber-200/70">Signal Demo</p>
-                <h4 className="mt-2 text-lg font-semibold text-white">Four-way traffic light simulation</h4>
-                <p className="mt-2 text-sm text-white/60">
-                  Demo speed controls affect both the signal cycle preview and the annotated video playback rate.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {PLAYBACK_SPEEDS.map((speed) => (
-                  <button
-                    key={speed}
-                    type="button"
-                    onClick={() => setPlaybackSpeed(speed)}
-                    className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                      playbackSpeed === speed
-                        ? "border-amber-200 bg-amber-200 text-black"
-                        : "border-white/10 bg-black/20 text-white/70 hover:bg-white/10 hover:text-white"
-                    }`}
-                  >
-                    {speed}x
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mb-4 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white/70">
-              Active green:{" "}
-              <span className="font-semibold text-emerald-300">
-                {activeSignal?.currentView.replace("_", " ").toUpperCase() ?? "N/A"}
-              </span>
-              {activeSignal ? <span className="ml-3 text-white/50">{activeSignal.secondsRemaining}s remaining</span> : null}
-              {result.priority_mode === "emergency_override" ? (
-                <span className="ml-3 inline-flex items-center gap-2 text-red-100">
-                  <AlertTriangle className="h-4 w-4" />
-                  Emergency override enabled
-                </span>
-              ) : null}
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {result.views.map((view) => {
-                const isActive = activeSignal?.currentView === view.view;
-                return (
-                  <div
-                    key={`${view.view}-signal`}
-                    className={`rounded-3xl border p-4 transition-colors ${
-                      isActive ? "border-emerald-300/40 bg-emerald-400/10" : "border-white/10 bg-black/20"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">{view.view.replace("_", " ")}</p>
-                        <p className="mt-2 text-sm text-white/70">
-                          green {result.recommended_green_times_seconds[view.view] ?? 0}s
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {view.emergency_detected ? <Siren className="h-4 w-4 text-red-200" /> : null}
-                        <Play className={`h-4 w-4 ${isActive ? "text-emerald-300" : "text-white/35"}`} />
-                      </div>
+                <div className="space-y-2">
+                  {result.views.map(view => (
+                    <div key={view.view} className="flex justify-between items-center p-2.5 rounded-xl bg-black/20 border border-transparent hover:border-white/10 transition-colors group">
+                       <span className="text-[11px] uppercase tracking-wider font-medium text-white/70 group-hover:text-white transition-colors">{view.view.replace("_", " ")}</span>
+                       <div className="flex gap-2 text-[10px] font-medium">
+                          <span className="bg-white/10 text-white/90 px-2 py-1 rounded" title="Total Vehicles">{view.estimated_unique_vehicles} tot</span>
+                          <span className="bg-blue-500/20 text-blue-300 px-2 py-1 rounded" title="Congestion Score">lvl {view.congestion_score}</span>
+                       </div>
                     </div>
-                    <div className="mt-5 flex items-center gap-3">
-                      <span className={`h-5 w-5 rounded-full ${!isActive ? "bg-red-500 shadow-[0_0_18px_rgba(239,68,68,0.65)]" : "bg-red-500/25"}`} />
-                      <span className={`h-5 w-5 rounded-full ${isActive ? "bg-amber-300/30" : "bg-amber-300/15"}`} />
-                      <span className={`h-5 w-5 rounded-full ${isActive ? "bg-emerald-400 shadow-[0_0_20px_rgba(74,222,128,0.7)]" : "bg-emerald-400/20"}`} />
-                    </div>
-                    <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className={`h-full rounded-full ${isActive ? "bg-emerald-300" : "bg-white/20"}`}
-                        style={{
-                          width: `${Math.min(((result.recommended_green_times_seconds[view.view] ?? 0) / result.cycle_time_seconds) * 100, 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Annotated Feeds</p>
-                <h4 className="mt-2 text-lg font-semibold text-white">Processed junction views</h4>
-              </div>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              {result.views.map((view) => (
-                <div key={`${view.view}-video`} className="overflow-hidden rounded-3xl border border-white/10 bg-black/35">
-                  <div className="border-b border-white/10 px-4 py-3">
-                    <p className="text-sm font-medium text-white">{view.view.replace("_", " ").toUpperCase()}</p>
-                    <p className="mt-1 text-xs text-white/45">
-                      {Object.entries(view.class_breakdown)
-                        .map(([label, count]) => `${label}: ${count}`)
-                        .join(" · ") || "No vehicles detected"}
-                    </p>
-                    {view.emergency_detected ? (
-                      <p className="mt-2 text-xs text-red-100/75">
-                        Emergency classes:{" "}
-                        {Object.entries(view.emergency_counts)
-                          .map(([label, count]) => `${label}: ${count}`)
-                          .join(" · ")}
-                      </p>
-                    ) : null}
-                  </div>
-                  {view.annotated_video_url ? (
-                    <video
-                      ref={(element) => {
-                        videoRefs.current[view.view] = element;
-                      }}
-                      className="aspect-video w-full bg-black"
-                      src={view.annotated_video_url}
-                      controls
-                      preload="metadata"
-                    />
-                  ) : (
-                    <div className="flex aspect-video items-center justify-center text-sm text-white/40">
-                      Annotated video unavailable for this run.
-                    </div>
-                  )}
+                  ))}
                 </div>
-              ))}
+              </div>
+            </div>
+
+            <div className="lg:col-span-2 space-y-6">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-sm">
+                 <div className="flex items-center justify-between mb-4">
+                   <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                     <Clock className="w-4 h-4 text-amber-400" />
+                     Live Simulation
+                   </h3>
+                   <div className="flex bg-black/40 p-1 rounded-lg border border-white/5">
+                      {PLAYBACK_SPEEDS.map((speed) => (
+                        <button
+                          key={speed}
+                          type="button"
+                          onClick={() => setPlaybackSpeed(speed)}
+                          className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${playbackSpeed === speed ? "bg-white/20 text-white shadow-sm" : "text-muted-foreground hover:text-white"}`}
+                        >
+                          {speed}x
+                        </button>
+                      ))}
+                   </div>
+                 </div>
+                 
+                 <div className="flex items-center justify-between mb-6 bg-black/40 p-3 rounded-xl border border-white/5">
+                    <div className="flex items-center gap-3">
+                       <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Active Phase</span>
+                       <span className="text-emerald-400 font-bold uppercase text-sm bg-emerald-500/10 px-2 py-0.5 rounded">
+                          {activeSignal?.currentView.replace("_", " ") ?? "N/A"}
+                       </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-white/70 font-mono">
+                       <Clock className="w-3.5 h-3.5 text-white/40" />
+                       {activeSignal?.secondsRemaining}s
+                    </div>
+                 </div>
+
+                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {result.views.map((view) => {
+                      const isActive = activeSignal?.currentView === view.view;
+                      return (
+                        <div key={view.view} className={`relative overflow-hidden rounded-xl border p-4 transition-all duration-500 flex flex-col items-center justify-center gap-4 ${isActive ? "border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_20px_rgba(16,185,129,0.1)]" : "border-white/5 bg-black/40"}`}>
+                           <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">{view.view.replace("_", " ")}</span>
+                           <div className="flex items-center gap-3 bg-black/60 p-2 rounded-full border border-white/5 relative z-10">
+                             <div className={`w-3.5 h-3.5 rounded-full transition-all ${!isActive ? "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]" : "bg-red-500/20"}`} />
+                             <div className={`w-3.5 h-3.5 rounded-full transition-all ${isActive ? "bg-amber-400/20" : "bg-amber-400/10"}`} />
+                             <div className={`w-3.5 h-3.5 rounded-full transition-all ${isActive ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" : "bg-emerald-400/20"}`} />
+                           </div>
+                           
+                           {isActive && <div className="absolute inset-0 bg-emerald-500/5 blur-xl pointer-events-none" />}
+                        </div>
+                      );
+                    })}
+                 </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-sm">
+                 <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-4">
+                   <Video className="w-4 h-4 text-blue-400" />
+                   Annotated Outputs
+                 </h3>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {result.views.map((view) => (
+                      <div key={`${view.view}-video`} className="overflow-hidden rounded-xl border border-white/10 bg-black/50 relative group">
+                        {view.annotated_video_url ? (
+                          <video
+                            ref={(element) => {
+                              videoRefs.current[view.view] = element;
+                            }}
+                            className="w-full aspect-video object-cover"
+                            src={view.annotated_video_url}
+                            controls
+                            preload="metadata"
+                          />
+                        ) : (
+                          <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 text-xs text-muted-foreground bg-black/60">
+                            <Video className="w-6 h-6 text-white/20" />
+                            No output generated
+                          </div>
+                        )}
+                        <div className="absolute top-0 left-0 right-0 p-3 bg-gradient-to-b from-black/80 to-transparent pointer-events-none flex justify-between items-start">
+                           <span className="text-[10px] font-bold uppercase text-white tracking-widest">{view.view.replace("_", " ")}</span>
+                           {view.emergency_detected && (
+                             <div className="bg-red-500/20 px-1.5 py-0.5 rounded border border-red-500/30 flex items-center gap-1">
+                                <ShieldAlert className="w-3 h-3 text-red-400" />
+                                <span className="text-[9px] uppercase font-bold text-red-200">Alert</span>
+                             </div>
+                           )}
+                        </div>
+                      </div>
+                    ))}
+                 </div>
+              </div>
+
             </div>
           </div>
-        </div>
+        </motion.div>
       ) : null}
+      </AnimatePresence>
     </div>
   );
 }
