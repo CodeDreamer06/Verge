@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import subprocess
 from collections import Counter
@@ -26,6 +27,8 @@ try:
 except ImportError:  # pragma: no cover - depends on installed ultralytics version
     YOLOWorld = None
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(slots=True)
 class EmergencyEvent:
@@ -33,6 +36,16 @@ class EmergencyEvent:
     confidence: float
     frame_index: int
     timestamp_seconds: float
+
+
+class _NullEmergencyModel:
+    def predict(self, *args, **kwargs):
+        return [_NullEmergencyResult()]
+
+
+class _NullEmergencyResult:
+    boxes = None
+    names: dict[int, str] = {}
 
 
 @dataclass(slots=True)
@@ -294,15 +307,19 @@ def _build_writer(target_path: Path, fps: float, frame_width: int, frame_height:
 
 
 def _load_emergency_model(model_path: Path):
-    if YOLOWorld is not None:
-        model = YOLOWorld(str(model_path))
-        model.set_classes(EMERGENCY_CLASS_NAMES)
-        return model
+    try:
+        if YOLOWorld is not None:
+            model = YOLOWorld(str(model_path))
+            model.set_classes(EMERGENCY_CLASS_NAMES)
+            return model
 
-    model = YOLO(str(model_path))
-    if hasattr(model, "set_classes"):
-        model.set_classes(EMERGENCY_CLASS_NAMES)
-    return model
+        model = YOLO(str(model_path))
+        if hasattr(model, "set_classes"):
+            model.set_classes(EMERGENCY_CLASS_NAMES)
+        return model
+    except ModuleNotFoundError as error:
+        logger.warning("Emergency model disabled because an optional dependency is missing: %s", error)
+        return _NullEmergencyModel()
 
 
 def _extract_emergency_matches(result, frame_index: int, fps: float) -> tuple[Counter[str], EmergencyEvent | None]:
