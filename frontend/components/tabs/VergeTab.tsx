@@ -2,7 +2,9 @@
 
 import { motion } from "framer-motion";
 import { Activity, Car, FileText, Siren, TrendingUp, Video, Zap } from "lucide-react";
+import Image from "next/image";
 import { ALERTS, VIOLATIONS } from "@/lib/data";
+import trafficImage from "../../traffic.jpeg";
 
 export default function VergeTab() {
   return (
@@ -120,13 +122,12 @@ export default function VergeTab() {
           </div>
 
           <div className="relative aspect-video rounded-3xl overflow-hidden bg-zinc-900 border border-white/10 shadow-2xl group ring-1 ring-white/5">
-            <video
-              autoPlay
-              loop
-              muted
-              playsInline
-              className="absolute inset-0 w-full h-full object-cover"
-              src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260307_083826_e938b29f-a43a-41ec-a153-3d4730578ab8.mp4"
+            <Image
+              src={trafficImage}
+              alt="Traffic camera feed"
+              fill
+              className="absolute inset-0 object-cover"
+              priority
             />
 
             <div className="absolute inset-0 pointer-events-none">

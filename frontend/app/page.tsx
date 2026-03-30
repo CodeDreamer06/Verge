@@ -5,7 +5,6 @@ import { ChevronDown } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRef } from "react";
-import trafficImage from "../traffic.jpeg";
 
 export default function Home() {
   const sectionRef = useRef<HTMLDivElement>(null);
@@ -198,7 +197,7 @@ export default function Home() {
           >
             <div className="relative w-[90%] md:w-full h-auto rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10">
               <Image
-                src={trafficImage}
+                src="/verge-dashboard.png"
                 alt="Verge Smart Traffic Dashboard"
                 width={1200}
                 height={800}
