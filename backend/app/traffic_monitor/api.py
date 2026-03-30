@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -15,6 +17,8 @@ MAX_UPLOADS = 4
 FAST_API_FRAME_STRIDE = 6
 FAST_API_EMERGENCY_FRAME_STRIDE = 24
 FAST_API_INFERENCE_SIZE = 416
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Verge Traffic API", version="0.1.0")
 app.add_middleware(
@@ -47,6 +51,7 @@ async def analyze(
     frame_stride: int = Form(FAST_API_FRAME_STRIDE),
     conf_threshold: float = Form(0.25),
 ) -> dict:
+    request_started = time.perf_counter()
     if not videos:
         raise HTTPException(status_code=400, detail="At least one video upload is required.")
     if len(videos) > MAX_UPLOADS:
@@ -58,14 +63,29 @@ async def analyze(
     upload_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    logger.info(
+        "Analyze request started run_id=%s videos=%d frame_stride=%d conf=%.2f cycle=%d min_green=%d max_green=%d",
+        run_id,
+        len(videos),
+        frame_stride,
+        conf_threshold,
+        cycle_time,
+        min_green,
+        max_green,
+    )
+
     saved_paths: list[Path] = []
     try:
+        upload_started = time.perf_counter()
         for index, upload in enumerate(videos, start=1):
             suffix = Path(upload.filename or f"view_{index}.mp4").suffix or ".mp4"
             target = upload_dir / f"view_{index}{suffix}"
             target.write_bytes(await upload.read())
             saved_paths.append(target)
+            logger.info("Saved upload run_id=%s view=%d path=%s", run_id, index, target)
+        logger.info("Finished saving uploads run_id=%s in %.2fs", run_id, time.perf_counter() - upload_started)
 
+        analysis_started = time.perf_counter()
         result = analyze_videos(
             video_paths=saved_paths,
             output_dir=output_dir,
@@ -79,7 +99,9 @@ async def analyze(
             inference_size=FAST_API_INFERENCE_SIZE,
             use_tracking=True,
         )
+        logger.info("Finished analysis run_id=%s in %.2fs", run_id, time.perf_counter() - analysis_started)
     except Exception as exc:
+        logger.exception("Analyze request failed run_id=%s: %s", run_id, exc)
         cleanup_paths([upload_dir, output_dir])
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     finally:
@@ -87,6 +109,7 @@ async def analyze(
         for upload in videos:
             await upload.close()
 
+    logger.info("Analyze request completed run_id=%s total=%.2fs", run_id, time.perf_counter() - request_started)
     return _serialize_result(request, run_id, result)
 
 

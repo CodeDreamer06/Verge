@@ -5,6 +5,7 @@ import logging
 import re
 import shutil
 import subprocess
+import time
 from collections import Counter
 from dataclasses import asdict, dataclass
 from math import ceil
@@ -38,6 +39,7 @@ except ImportError:  # pragma: no cover - depends on installed ultralytics versi
     YOLOWorld = None
 
 logger = logging.getLogger(__name__)
+PROGRESS_LOG_INTERVAL_FRAMES = 120
 
 
 @dataclass(slots=True)
@@ -129,6 +131,7 @@ def analyze_videos(
     inference_size: int = 640,
     use_tracking: bool = True,
 ) -> dict:
+    started_at = time.perf_counter()
     if not video_paths:
         raise ValueError("At least one video path is required.")
     if min_green > max_green:
@@ -139,17 +142,32 @@ def analyze_videos(
         raise ValueError("emergency_frame_stride must be at least 1.")
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(
+        "Starting traffic analysis videos=%d output_dir=%s frame_stride=%d emergency_frame_stride=%s conf=%.2f inference_size=%d tracking=%s annotated=%s",
+        len(video_paths),
+        output_dir,
+        frame_stride,
+        emergency_frame_stride,
+        conf_threshold,
+        inference_size,
+        use_tracking,
+        save_annotated,
+    )
     resolved_model = ensure_model(destination=model_path) if model_path else ensure_model()
     emergency_model_path = ensure_model(model_name=EMERGENCY_MODEL_NAME)
+    logger.info("Resolved models vehicle=%s emergency=%s", resolved_model, emergency_model_path)
+    model_init_started = time.perf_counter()
     scene_model = _load_scene_model(emergency_model_path)
     ocr_reader = _load_ocr_reader()
     model = YOLO(str(resolved_model))
     emergency_model = _load_emergency_model(emergency_model_path)
+    logger.info("Initialized inference models in %.2fs", time.perf_counter() - model_init_started)
 
     analyses: list[ViewAnalysis] = []
     view_scores: list[ViewScore] = []
 
     for index, video_path in enumerate(video_paths, start=1):
+        view_started = time.perf_counter()
         analysis = _analyze_single_video(
             model=model,
             emergency_model=emergency_model,
@@ -167,6 +185,17 @@ def analyze_videos(
         )
         analyses.append(analysis)
         view_scores.append(ViewScore(label=analysis.view, congestion_score=analysis.priority_score))
+        logger.info(
+            "Completed view=%s source=%s frames=%d avg_vehicles=%.2f peak=%d violations=%d emergencies=%s elapsed=%.2fs",
+            analysis.view,
+            video_path,
+            analysis.frames_processed,
+            analysis.average_vehicle_count,
+            analysis.peak_vehicle_count,
+            len(analysis.violations),
+            analysis.emergency_detected,
+            time.perf_counter() - view_started,
+        )
 
     incidents = _build_incidents_feed(analyses)
 
@@ -201,6 +230,7 @@ def analyze_videos(
     summary_path = output_dir / "traffic_summary.json"
     summary_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     result["summary_path"] = str(summary_path)
+    logger.info("Traffic analysis finished summary=%s total=%.2fs", summary_path, time.perf_counter() - started_at)
     return result
 
 
@@ -231,6 +261,9 @@ def _analyze_single_video(
 ) -> ViewAnalysis:
     if not video_path.exists():
         raise FileNotFoundError(f"Video not found: {video_path}")
+
+    started_at = time.perf_counter()
+    logger.info("Starting view analysis view=%s video=%s", view_label, video_path)
 
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
@@ -322,6 +355,18 @@ def _analyze_single_video(
                     strongest_emergency is None or frame_strongest.confidence > strongest_emergency.confidence
                 ):
                     strongest_emergency = frame_strongest
+
+            if sampled_frames and sampled_frames % PROGRESS_LOG_INTERVAL_FRAMES == 0:
+                logger.info(
+                    "View progress view=%s sampled_frames=%d frame_index=%d avg_vehicles=%.2f violations=%d emergencies=%d elapsed=%.2fs",
+                    view_label,
+                    sampled_frames,
+                    frame_index,
+                    total_count / sampled_frames,
+                    len(violations),
+                    sum(emergency_counts.values()),
+                    time.perf_counter() - started_at,
+                )
 
             boxes = result.boxes
             if boxes is not None and boxes.cls is not None:
@@ -419,8 +464,15 @@ def _analyze_single_video(
     finally:
         capture.release()
         if writer is not None:
+            finalize_started = time.perf_counter()
             writer.release()
             _finalize_annotated_video(raw_annotated_path, final_annotated_path)
+            logger.info(
+                "Finalized annotated video view=%s target=%s elapsed=%.2fs",
+                view_label,
+                final_annotated_path,
+                time.perf_counter() - finalize_started,
+            )
 
     average_vehicle_count = (total_count / sampled_frames) if sampled_frames else 0.0
     weighted_average_load = (total_weighted_count / sampled_frames) if sampled_frames else 0.0
