@@ -1,4 +1,4 @@
-from traffic_monitor.signal_optimizer import ViewScore, allocate_green_times
+from traffic_monitor.signal_optimizer import ViewScore, allocate_green_times, apply_priority_override
 
 
 def test_allocate_green_times_respects_bounds_and_cycle():
@@ -49,3 +49,31 @@ def test_allocate_green_times_single_view_uses_full_cycle():
     )
 
     assert allocations == {"view_1": 120}
+
+
+def test_apply_priority_override_promotes_emergency_view_to_front():
+    view_scores = [
+        ViewScore(label="view_1", congestion_score=1005),
+        ViewScore(label="view_2", congestion_score=12),
+        ViewScore(label="view_3", congestion_score=9),
+        ViewScore(label="view_4", congestion_score=6),
+    ]
+    allocations = allocate_green_times(
+        view_scores=view_scores,
+        cycle_time=120,
+        min_green=15,
+        max_green=75,
+    )
+
+    prioritized = apply_priority_override(
+        view_scores=view_scores,
+        allocations=allocations,
+        cycle_time=120,
+        min_green=15,
+        max_green=75,
+        priority_label="view_1",
+    )
+
+    assert sum(prioritized.values()) == 120
+    assert prioritized["view_1"] == 75
+    assert all(seconds >= 15 for label, seconds in prioritized.items() if label != "view_1")

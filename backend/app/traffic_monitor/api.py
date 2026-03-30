@@ -103,8 +103,12 @@ def _serialize_result(request: Request, run_id: str, result: dict) -> dict:
     return {
         "run_id": run_id,
         "model_path": result["model_path"],
+        "emergency_model_path": result["emergency_model_path"],
         "cycle_time_seconds": result["cycle_time_seconds"],
         "summary_url": f"{base_url}/outputs/{run_id}/traffic_summary.json",
         "recommended_green_times_seconds": result["recommended_green_times_seconds"],
+        "priority_mode": result["priority_mode"],
+        "priority_view": result["priority_view"],
+        "signal_sequence": result["signal_sequence"],
         "views": views,
     }

@@ -51,3 +51,32 @@ def allocate_green_times(
             break
 
     return allocations
+
+
+def apply_priority_override(
+    view_scores: list[ViewScore],
+    allocations: dict[str, int],
+    cycle_time: int,
+    min_green: int,
+    max_green: int,
+    priority_label: str | None = None,
+) -> dict[str, int]:
+    if not priority_label or priority_label not in allocations:
+        return allocations
+    if len(view_scores) <= 1:
+        return allocations
+
+    reserved_minimum = min_green * (len(view_scores) - 1)
+    priority_green = min(max_green, cycle_time - reserved_minimum)
+    if priority_green <= 0:
+        return allocations
+
+    remaining_scores = [score for score in view_scores if score.label != priority_label]
+    remaining_cycle = cycle_time - priority_green
+    remaining_allocations = allocate_green_times(
+        view_scores=remaining_scores,
+        cycle_time=remaining_cycle,
+        min_green=min_green,
+        max_green=max_green,
+    )
+    return {priority_label: priority_green, **remaining_allocations}
