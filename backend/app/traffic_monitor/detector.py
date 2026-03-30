@@ -93,6 +93,52 @@ class _NullPlateModel:
         return [_NullEmergencyResult()]
 
 
+class _ListTensor:
+    def __init__(self, values: list):
+        self._values = values
+
+    def int(self):
+        return _ListTensor([int(value) for value in self._values])
+
+    def tolist(self):
+        return self._values
+
+    def __len__(self):
+        return len(self._values)
+
+
+class _YoloV5Boxes:
+    def __init__(self, rows: list[list[float]]):
+        xyxy = [row[:4] for row in rows]
+        conf = [row[4] for row in rows]
+        cls = [row[5] for row in rows]
+        self.xyxy = _ListTensor(xyxy)
+        self.conf = _ListTensor(conf)
+        self.cls = _ListTensor(cls)
+
+
+class _YoloV5Result:
+    def __init__(self, rows: list[list[float]], names):
+        self.boxes = _YoloV5Boxes(rows) if rows else None
+        self.names = names
+
+
+class _YoloV5PlateAdapter:
+    def __init__(self, model):
+        self.model = model
+
+    def predict(self, frame, conf: float, verbose: bool = False, imgsz: int = 640):
+        del verbose
+        self.model.conf = conf
+        results = self.model(frame, size=imgsz)
+        predictions = getattr(results, "pred", [])
+        rows = predictions[0].tolist() if predictions else []
+        names = getattr(results, "names", getattr(self.model, "names", {}))
+        if isinstance(names, list):
+            names = {index: label for index, label in enumerate(names)}
+        return [_YoloV5Result(rows=rows, names=names)]
+
+
 class _NullOcrReader:
     def readtext(self, *args, **kwargs):
         return []
@@ -484,9 +530,43 @@ def _resize_frame_for_inference(frame, inference_size: int):
 
 def _load_plate_model():
     if PLATE_MODEL_PATH.exists():
-        return YOLO(str(PLATE_MODEL_PATH))
+        try:
+            return YOLO(str(PLATE_MODEL_PATH))
+        except Exception as error:
+            if _is_yolov5_checkpoint_error(error):
+                return _load_yolov5_plate_model(PLATE_MODEL_PATH, error)
+            raise
     logger.info("Plate model not found at %s; falling back to YOLO World plate prompts.", PLATE_MODEL_PATH)
     return _NullPlateModel()
+
+
+def _is_yolov5_checkpoint_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return "yolov5 model" in message and "not forwards compatible" in message
+
+
+def _load_yolov5_plate_model(model_path: Path, original_error: Exception):
+    try:
+        import yolov5
+    except ImportError as import_error:
+        logger.warning(
+            "Plate model at %s is a YOLOv5 checkpoint, but the YOLOv5 runtime is unavailable (%s). "
+            "Original load error: %s. Falling back to YOLO World plate prompts.",
+            model_path,
+            import_error,
+            original_error,
+        )
+        return _NullPlateModel()
+
+    try:
+        return _YoloV5PlateAdapter(yolov5.load(str(model_path)))
+    except Exception as error:
+        logger.warning(
+            "Failed to load YOLOv5 plate model at %s (%s). Falling back to YOLO World plate prompts.",
+            model_path,
+            error,
+        )
+        return _NullPlateModel()
 
 
 def _load_scene_model(model_path: Path):
