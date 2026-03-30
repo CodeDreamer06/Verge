@@ -13,6 +13,8 @@ import ReportsTab from "@/components/tabs/ReportsTab";
 import StatsTab from "@/components/tabs/StatsTab";
 import SettingsTab from "@/components/tabs/SettingsTab";
 
+const DASHBOARD_TABS = ["Verge", "Incidents", "Parking", "Reports", "Stats", "Settings"] as const;
+
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("Verge");
   const [mounted, setMounted] = useState(false);
@@ -34,6 +36,35 @@ export default function Dashboard() {
     updateTime();
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          target instanceof HTMLSelectElement)
+      ) {
+        return;
+      }
+
+      const tabIndex = Number.parseInt(event.key, 10);
+      if (Number.isNaN(tabIndex) || tabIndex < 1 || tabIndex > DASHBOARD_TABS.length) {
+        return;
+      }
+
+      setActiveTab(DASHBOARD_TABS[tabIndex - 1]);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   if (!mounted) return null;
@@ -60,7 +91,7 @@ export default function Dashboard() {
 
           {/* Tabs */}
           <nav className="flex items-center gap-2 text-sm font-medium overflow-x-auto whitespace-nowrap hide-scrollbar">
-            {["Verge", "Incidents", "Parking", "Reports", "Stats", "Settings"].map((tab) => (
+            {DASHBOARD_TABS.map((tab, index) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -71,6 +102,7 @@ export default function Dashboard() {
                 }`}
               >
                 {tab}
+                <span className="ml-2 text-[10px] text-white/35">{index + 1}</span>
                 {activeTab === tab && (
                   <motion.div
                     layoutId="activeTab"

@@ -57,6 +57,7 @@ const VIDEO_SLOTS = [
 const API_BASE_URL = process.env.NEXT_PUBLIC_TRAFFIC_API_URL ?? "http://127.0.0.1:8000";
 const INCIDENTS_STORAGE_KEY = "verge-active-incidents";
 const PLAYBACK_SPEEDS = [1, 2, 3, 5] as const;
+const AMBER_PHASE_SECONDS = 2;
 const PROCESSING_STEPS = [
   {
     title: "Uploading CCTV feeds",
@@ -147,14 +148,22 @@ export default function TrafficUploadPanel() {
     for (const phase of cyclePhases) {
       elapsed += phase.seconds;
       if (cyclePosition < elapsed) {
+        const secondsRemaining = Math.ceil(elapsed - cyclePosition);
         return {
           currentView: phase.view,
-          secondsRemaining: Math.ceil(elapsed - cyclePosition),
+          secondsRemaining,
+          state: secondsRemaining <= Math.min(AMBER_PHASE_SECONDS, phase.seconds) ? "amber" : "green",
         };
       }
     }
     const lastPhase = cyclePhases[cyclePhases.length - 1];
-    return lastPhase ? { currentView: lastPhase.view, secondsRemaining: lastPhase.seconds } : null;
+    return lastPhase
+      ? {
+          currentView: lastPhase.view,
+          secondsRemaining: lastPhase.seconds,
+          state: lastPhase.seconds <= AMBER_PHASE_SECONDS ? "amber" : "green",
+        }
+      : null;
   }, [cyclePhases, result, simulationSeconds]);
 
   useEffect(() => {
@@ -531,9 +540,20 @@ export default function TrafficUploadPanel() {
                  <div className="flex items-center justify-between mb-6 bg-black/40 p-3 rounded-xl border border-white/5">
                     <div className="flex items-center gap-3">
                        <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Active Phase</span>
-                       <span className="text-emerald-400 font-bold uppercase text-sm bg-emerald-500/10 px-2 py-0.5 rounded">
+                       <span className={`font-bold uppercase text-sm px-2 py-0.5 rounded ${
+                         activeSignal?.state === "amber"
+                           ? "text-amber-300 bg-amber-400/10"
+                           : "text-emerald-400 bg-emerald-500/10"
+                       }`}>
                           {activeSignal?.currentView.replace("_", " ") ?? "N/A"}
                        </span>
+                       {activeSignal?.state && (
+                         <span className={`text-[10px] uppercase font-bold tracking-[0.2em] ${
+                           activeSignal.state === "amber" ? "text-amber-300" : "text-emerald-300"
+                         }`}>
+                           {activeSignal.state}
+                         </span>
+                       )}
                     </div>
                     <div className="flex items-center gap-2 text-sm text-white/70 font-mono">
                        <Clock className="w-3.5 h-3.5 text-white/40" />
@@ -544,16 +564,30 @@ export default function TrafficUploadPanel() {
                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {result.views.map((view) => {
                       const isActive = activeSignal?.currentView === view.view;
+                      const isAmber = isActive && activeSignal?.state === "amber";
+                      const isGreen = isActive && activeSignal?.state === "green";
                       return (
-                        <div key={view.view} className={`relative overflow-hidden rounded-xl border p-4 transition-all duration-500 flex flex-col items-center justify-center gap-4 ${isActive ? "border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_20px_rgba(16,185,129,0.1)]" : "border-white/5 bg-black/40"}`}>
+                        <div key={view.view} className={`relative overflow-hidden rounded-xl border p-4 transition-all duration-500 flex flex-col items-center justify-center gap-4 ${
+                          isAmber
+                            ? "border-amber-400/50 bg-amber-400/10 shadow-[0_0_24px_rgba(251,191,36,0.16)]"
+                            : isGreen
+                              ? "border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_20px_rgba(16,185,129,0.1)]"
+                              : "border-white/5 bg-black/40"
+                        }`}>
                            <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">{view.view.replace("_", " ")}</span>
-                           <div className="flex items-center gap-3 bg-black/60 p-2 rounded-full border border-white/5 relative z-10">
-                             <div className={`w-3.5 h-3.5 rounded-full transition-all ${!isActive ? "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]" : "bg-red-500/20"}`} />
-                             <div className={`w-3.5 h-3.5 rounded-full transition-all ${isActive ? "bg-amber-400/20" : "bg-amber-400/10"}`} />
-                             <div className={`w-3.5 h-3.5 rounded-full transition-all ${isActive ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" : "bg-emerald-400/20"}`} />
+                           <div className="flex items-center gap-4 bg-black/60 px-4 py-3 rounded-full border border-white/5 relative z-10">
+                             <div className={`w-5 h-5 rounded-full transition-all ${!isActive ? "bg-red-500 shadow-[0_0_14px_rgba(239,68,68,0.85)]" : "bg-red-500/15"}`} />
+                             <div className={`w-5 h-5 rounded-full transition-all ${isAmber ? "bg-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.85)]" : "bg-amber-400/15"}`} />
+                             <div className={`w-5 h-5 rounded-full transition-all ${isGreen ? "bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.85)]" : "bg-emerald-400/15"}`} />
                            </div>
                            
-                           {isActive && <div className="absolute inset-0 bg-emerald-500/5 blur-xl pointer-events-none" />}
+                           {isActive && (
+                             <div
+                               className={`absolute inset-0 blur-xl pointer-events-none ${
+                                 isAmber ? "bg-amber-400/10" : "bg-emerald-500/5"
+                               }`}
+                             />
+                           )}
                         </div>
                       );
                     })}
