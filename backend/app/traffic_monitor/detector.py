@@ -5,6 +5,7 @@ import logging
 import re
 import shutil
 import subprocess
+from contextlib import contextmanager
 from collections import Counter
 from dataclasses import asdict, dataclass
 from math import ceil
@@ -91,6 +92,9 @@ class _NullEmergencyResult:
 class _NullPlateModel:
     def predict(self, *args, **kwargs):
         return [_NullEmergencyResult()]
+
+
+YOLOV9_PLATE_MARKERS = (b"RepNCSPELAN4", b"gelan-c.yaml", b"/yolov9/")
 
 
 class _ListTensor:
@@ -530,6 +534,16 @@ def _resize_frame_for_inference(frame, inference_size: int):
 
 def _load_plate_model():
     if PLATE_MODEL_PATH.exists():
+        inferred_family = _infer_plate_checkpoint_family(PLATE_MODEL_PATH)
+        if inferred_family == "yolov9":
+            logger.warning(
+                "Plate model at %s appears to be a YOLOv9/GELAN checkpoint. "
+                "The current backend supports Ultralytics YOLOv8 models and optional YOLOv5 checkpoints, "
+                "but this asset requires a YOLOv9 runtime with GELAN modules such as RepNCSPELAN4. "
+                "Falling back to YOLO World plate prompts.",
+                PLATE_MODEL_PATH,
+            )
+            return _NullPlateModel()
         try:
             return YOLO(str(PLATE_MODEL_PATH))
         except Exception as error:
@@ -545,8 +559,27 @@ def _is_yolov5_checkpoint_error(error: Exception) -> bool:
     return "yolov5 model" in message and "not forwards compatible" in message
 
 
+def _infer_plate_checkpoint_family(model_path: Path) -> str | None:
+    if _file_contains_markers(model_path, YOLOV9_PLATE_MARKERS):
+        return "yolov9"
+    return None
+
+
+def _file_contains_markers(model_path: Path, markers: tuple[bytes, ...], chunk_size: int = 1024 * 1024) -> bool:
+    overlap = max(len(marker) for marker in markers) - 1
+    tail = b""
+    with model_path.open("rb") as handle:
+        while chunk := handle.read(chunk_size):
+            haystack = tail + chunk
+            if any(marker in haystack for marker in markers):
+                return True
+            tail = haystack[-overlap:] if overlap > 0 else b""
+    return False
+
+
 def _load_yolov5_plate_model(model_path: Path, original_error: Exception):
     try:
+        import torch
         import yolov5
     except ImportError as import_error:
         logger.warning(
@@ -559,7 +592,8 @@ def _load_yolov5_plate_model(model_path: Path, original_error: Exception):
         return _NullPlateModel()
 
     try:
-        return _YoloV5PlateAdapter(yolov5.load(str(model_path)))
+        with _allow_trusted_legacy_torch_load(torch):
+            return _YoloV5PlateAdapter(yolov5.load(str(model_path)))
     except Exception as error:
         logger.warning(
             "Failed to load YOLOv5 plate model at %s (%s). Falling back to YOLO World plate prompts.",
@@ -567,6 +601,21 @@ def _load_yolov5_plate_model(model_path: Path, original_error: Exception):
             error,
         )
         return _NullPlateModel()
+
+
+@contextmanager
+def _allow_trusted_legacy_torch_load(torch_module):
+    original_torch_load = torch_module.load
+
+    def _patched_torch_load(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return original_torch_load(*args, **kwargs)
+
+    torch_module.load = _patched_torch_load
+    try:
+        yield
+    finally:
+        torch_module.load = original_torch_load
 
 
 def _load_scene_model(model_path: Path):

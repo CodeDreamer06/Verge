@@ -105,3 +105,59 @@ def test_load_plate_model_falls_back_when_yolov5_runtime_is_unavailable(monkeypa
     model = detector._load_plate_model()
 
     assert isinstance(model, detector._NullPlateModel)
+
+
+def test_load_yolov5_plate_model_forces_legacy_torch_deserialization(monkeypatch, tmp_path):
+    legacy_checkpoint = tmp_path / "plate_detection.pt"
+    legacy_checkpoint.write_bytes(b"weights")
+    captured: dict[str, object] = {}
+
+    class FakeTorchModule:
+        def __init__(self):
+            self.load = self._load
+
+        def _load(self, *args, **kwargs):
+            captured["weights_only"] = kwargs.get("weights_only")
+            return {"ok": True}
+
+    class FakePredictions:
+        pred = []
+        names = {0: "license plate"}
+
+    class FakeYoloV5Model:
+        names = {0: "license plate"}
+
+        def __call__(self, frame, size: int):
+            return FakePredictions()
+
+    def fake_yolov5_load(model_path: str):
+        fake_torch.load(model_path)
+        return FakeYoloV5Model()
+
+    fake_torch = FakeTorchModule()
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "yolov5", types.SimpleNamespace(load=fake_yolov5_load))
+
+    model = detector._load_yolov5_plate_model(legacy_checkpoint, RuntimeError("legacy checkpoint"))
+
+    assert isinstance(model, detector._YoloV5PlateAdapter)
+    assert captured["weights_only"] is False
+
+
+def test_infer_plate_checkpoint_family_detects_yolov9_marker(tmp_path):
+    checkpoint = tmp_path / "plate_detection.pt"
+    checkpoint.write_bytes(b"prefix RepNCSPELAN4 middle gelan-c.yaml suffix")
+
+    assert detector._infer_plate_checkpoint_family(checkpoint) == "yolov9"
+
+
+def test_load_plate_model_skips_yolov5_path_for_yolov9_checkpoint(monkeypatch, tmp_path):
+    checkpoint = tmp_path / "plate_detection.pt"
+    checkpoint.write_bytes(b"prefix RepNCSPELAN4 middle gelan-c.yaml suffix")
+
+    monkeypatch.setattr(detector, "PLATE_MODEL_PATH", checkpoint)
+    monkeypatch.setattr(detector, "YOLO", lambda model_path: (_ for _ in ()).throw(AssertionError("should not load")))
+
+    model = detector._load_plate_model()
+
+    assert isinstance(model, detector._NullPlateModel)
