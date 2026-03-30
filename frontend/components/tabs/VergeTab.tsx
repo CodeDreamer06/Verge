@@ -1,14 +1,36 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { Activity, Car, FileText, Siren, TrendingUp, Video, Zap } from "lucide-react";
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Activity, Car, FileText, Siren, TrendingUp, Video, Zap, CheckCircle2 } from "lucide-react";
 import { ALERTS, VIOLATIONS } from "@/lib/data";
 import TrafficUploadPanel from "@/components/traffic/TrafficUploadPanel";
 import TrafficMonitor from "../TrafficMonitor";
 
 export default function VergeTab() {
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
   return (
-    <div className="flex flex-col gap-6 w-full">
+    <div className="flex flex-col gap-6 w-full relative">
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: "-50%" }}
+            animate={{ opacity: 1, y: 0, x: "-50%" }}
+            exit={{ opacity: 0, y: 50, x: "-50%" }}
+            className="fixed bottom-10 left-1/2 z-50 bg-blue-500/10 border border-blue-500/20 text-blue-400 backdrop-blur-md px-4 py-3 rounded-2xl flex items-center gap-3 shadow-2xl"
+          >
+            <CheckCircle2 className="w-5 h-5" />
+            <span className="text-sm font-medium">{toastMessage}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Top KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <motion.div
@@ -287,7 +309,10 @@ export default function VergeTab() {
             <h2 className="text-xl font-medium tracking-tight">AI Traffic Rule Monitoring</h2>
             <p className="text-sm text-muted-foreground mt-1">Automatic logging of common violations & red-light jumpers.</p>
           </div>
-          <button className="flex items-center gap-2 text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors bg-blue-400/10 px-4 py-2 rounded-lg border border-blue-400/20 hover:bg-blue-400/20">
+          <button 
+            onClick={() => showToast("Traffic report exported successfully.")}
+            className="flex items-center gap-2 text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors bg-blue-400/10 px-4 py-2 rounded-lg border border-blue-400/20 hover:bg-blue-400/20"
+          >
             <FileText className="w-4 h-4" />
             Export Report
           </button>
@@ -332,7 +357,12 @@ export default function VergeTab() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button className="text-muted-foreground hover:text-white transition-colors">Review</button>
+                      <button 
+                        onClick={() => showToast(`Reviewing violation ${violation.id}...`)}
+                        className="text-muted-foreground hover:text-white transition-colors"
+                      >
+                        Review
+                      </button>
                     </td>
                   </tr>
                 ))}
