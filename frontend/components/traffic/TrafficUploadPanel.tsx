@@ -44,7 +44,7 @@ type AnalysisResponse = {
   priority_mode: "balanced" | "emergency_override";
   priority_view: string | null;
   signal_sequence: string[];
-  comparison_to_static: {
+  comparison_to_static?: {
     static_green_times_seconds: Record<string, number>;
     estimated_average_wait_static_seconds: number;
     estimated_average_wait_adaptive_seconds: number;
@@ -144,6 +144,66 @@ export default function TrafficUploadPanel() {
     () => result?.views.find((view) => view.view === result.priority_view) ?? null,
     [result],
   );
+  const comparisonToStatic = useMemo(() => {
+    if (!result) {
+      return null;
+    }
+    if (result.comparison_to_static) {
+      return result.comparison_to_static;
+    }
+
+    const viewCount = result.views.length;
+    if (viewCount === 0) {
+      return null;
+    }
+
+    const baseSplit = Math.floor(result.cycle_time_seconds / viewCount);
+    const staticGreenTimesSeconds = Object.fromEntries(
+      result.views.map((view) => [view.view, baseSplit]),
+    );
+    let remainder = result.cycle_time_seconds - baseSplit * viewCount;
+    for (const view of result.views) {
+      if (remainder <= 0) {
+        break;
+      }
+      staticGreenTimesSeconds[view.view] += 1;
+      remainder -= 1;
+    }
+
+    const totalLoad = result.views.reduce(
+      (sum, view) => sum + Math.max(view.weighted_average_load, 0),
+      0,
+    );
+    if (totalLoad <= 0) {
+      return {
+        static_green_times_seconds: staticGreenTimesSeconds,
+        estimated_average_wait_static_seconds: 0,
+        estimated_average_wait_adaptive_seconds: 0,
+        estimated_average_wait_saved_seconds: 0,
+        estimated_total_delay_reduction_per_cycle_seconds: 0,
+      };
+    }
+
+    let staticWait = 0;
+    let adaptiveWait = 0;
+    for (const view of result.views) {
+      const load = Math.max(view.weighted_average_load, 0);
+      staticWait += load * Math.max(result.cycle_time_seconds - (staticGreenTimesSeconds[view.view] ?? 0), 0);
+      adaptiveWait +=
+        load *
+        Math.max(result.cycle_time_seconds - (result.recommended_green_times_seconds[view.view] ?? 0), 0);
+    }
+
+    const averageStaticWait = staticWait / totalLoad;
+    const averageAdaptiveWait = adaptiveWait / totalLoad;
+    return {
+      static_green_times_seconds: staticGreenTimesSeconds,
+      estimated_average_wait_static_seconds: averageStaticWait,
+      estimated_average_wait_adaptive_seconds: averageAdaptiveWait,
+      estimated_average_wait_saved_seconds: Math.max(averageStaticWait - averageAdaptiveWait, 0),
+      estimated_total_delay_reduction_per_cycle_seconds: Math.max(staticWait - adaptiveWait, 0),
+    };
+  }, [result]);
 
   const activeSignal = useMemo(() => {
     if (!result || cyclePhases.length === 0) {
@@ -532,7 +592,7 @@ export default function TrafficUploadPanel() {
                   <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-right">
                     <p className="text-[10px] uppercase tracking-widest text-emerald-300">Avg Wait Saved</p>
                     <p className="text-lg font-semibold text-white">
-                      {result.comparison_to_static.estimated_average_wait_saved_seconds.toFixed(1)}s
+                      {comparisonToStatic?.estimated_average_wait_saved_seconds.toFixed(1) ?? "0.0"}s
                     </p>
                   </div>
                 </div>
@@ -541,13 +601,13 @@ export default function TrafficUploadPanel() {
                   <div className="rounded-xl border border-white/5 bg-black/30 p-3">
                     <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Static Avg Wait</p>
                     <p className="mt-1 text-xl font-semibold text-white">
-                      {result.comparison_to_static.estimated_average_wait_static_seconds.toFixed(1)}s
+                      {comparisonToStatic?.estimated_average_wait_static_seconds.toFixed(1) ?? "0.0"}s
                     </p>
                   </div>
                   <div className="rounded-xl border border-white/5 bg-black/30 p-3">
                     <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Adaptive Avg Wait</p>
                     <p className="mt-1 text-xl font-semibold text-white">
-                      {result.comparison_to_static.estimated_average_wait_adaptive_seconds.toFixed(1)}s
+                      {comparisonToStatic?.estimated_average_wait_adaptive_seconds.toFixed(1) ?? "0.0"}s
                     </p>
                   </div>
                 </div>
@@ -555,7 +615,7 @@ export default function TrafficUploadPanel() {
                 <div className="mt-3 rounded-xl border border-white/5 bg-black/30 p-3">
                   <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Delay Reduction Per Cycle</p>
                   <p className="mt-1 text-xl font-semibold text-white">
-                    {result.comparison_to_static.estimated_total_delay_reduction_per_cycle_seconds.toFixed(1)} weighted vehicle-seconds
+                    {comparisonToStatic?.estimated_total_delay_reduction_per_cycle_seconds.toFixed(1) ?? "0.0"} weighted vehicle-seconds
                   </p>
                   <p className="mt-2 text-xs leading-relaxed text-white/60">
                     Static baseline assumes each active approach gets the same green window. The saved time estimate is a load-weighted proxy derived from the observed traffic in this run.
