@@ -44,6 +44,13 @@ type AnalysisResponse = {
   priority_mode: "balanced" | "emergency_override";
   priority_view: string | null;
   signal_sequence: string[];
+  comparison_to_static: {
+    static_green_times_seconds: Record<string, number>;
+    estimated_average_wait_static_seconds: number;
+    estimated_average_wait_adaptive_seconds: number;
+    estimated_average_wait_saved_seconds: number;
+    estimated_total_delay_reduction_per_cycle_seconds: number;
+  };
   views: ViewSummary[];
 };
 
@@ -509,6 +516,51 @@ export default function TrafficUploadPanel() {
                      <p className="text-sm text-white font-mono bg-white/5 px-2 py-0.5 rounded">{result.cycle_time_seconds}s</p>
                    </div>
                  </div>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-emerald-400" />
+                      Static Plan Comparison
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Estimated against a fixed equal-split controller across the same cycle.
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-right">
+                    <p className="text-[10px] uppercase tracking-widest text-emerald-300">Avg Wait Saved</p>
+                    <p className="text-lg font-semibold text-white">
+                      {result.comparison_to_static.estimated_average_wait_saved_seconds.toFixed(1)}s
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-white/5 bg-black/30 p-3">
+                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Static Avg Wait</p>
+                    <p className="mt-1 text-xl font-semibold text-white">
+                      {result.comparison_to_static.estimated_average_wait_static_seconds.toFixed(1)}s
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/5 bg-black/30 p-3">
+                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Adaptive Avg Wait</p>
+                    <p className="mt-1 text-xl font-semibold text-white">
+                      {result.comparison_to_static.estimated_average_wait_adaptive_seconds.toFixed(1)}s
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-xl border border-white/5 bg-black/30 p-3">
+                  <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Delay Reduction Per Cycle</p>
+                  <p className="mt-1 text-xl font-semibold text-white">
+                    {result.comparison_to_static.estimated_total_delay_reduction_per_cycle_seconds.toFixed(1)} weighted vehicle-seconds
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-white/60">
+                    Static baseline assumes each active approach gets the same green window. The saved time estimate is a load-weighted proxy derived from the observed traffic in this run.
+                  </p>
+                </div>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-sm">

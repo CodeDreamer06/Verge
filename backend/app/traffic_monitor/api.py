@@ -140,5 +140,6 @@ def _serialize_result(request: Request, run_id: str, result: dict) -> dict:
         "priority_mode": result["priority_mode"],
         "priority_view": result["priority_view"],
         "signal_sequence": result["signal_sequence"],
+        "comparison_to_static": result["comparison_to_static"],
         "views": views,
     }

@@ -92,6 +92,15 @@ class _ViewTask:
     emergency_model_path: str
 
 
+@dataclass(slots=True)
+class TimingComparison:
+    static_green_times_seconds: dict[str, int]
+    estimated_average_wait_static_seconds: float
+    estimated_average_wait_adaptive_seconds: float
+    estimated_average_wait_saved_seconds: float
+    estimated_total_delay_reduction_per_cycle_seconds: float
+
+
 def analyze_videos(
     video_paths: list[Path],
     output_dir: Path,
@@ -163,6 +172,13 @@ def analyze_videos(
         priority_label=priority_view,
     )
     signal_sequence = _build_signal_sequence(analyses, recommended_green_times, priority_view)
+    timing_comparison = _build_timing_comparison(
+        analyses=analyses,
+        adaptive_allocations=recommended_green_times,
+        cycle_time=cycle_time,
+        min_green=min_green,
+        max_green=max_green,
+    )
 
     result = {
         "model_path": str(resolved_model),
@@ -174,6 +190,7 @@ def analyze_videos(
         "priority_mode": "emergency_override" if priority_view else "balanced",
         "priority_view": priority_view,
         "signal_sequence": signal_sequence,
+        "comparison_to_static": asdict(timing_comparison),
     }
     summary_path = output_dir / "traffic_summary.json"
     summary_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
@@ -614,6 +631,68 @@ def _build_signal_sequence(
         reverse=True,
     )
     return [priority_view, *trailing] if priority_view else trailing
+
+
+def _build_timing_comparison(
+    analyses: list[ViewAnalysis],
+    adaptive_allocations: dict[str, int],
+    cycle_time: int,
+    min_green: int,
+    max_green: int,
+) -> TimingComparison:
+    view_scores = [ViewScore(label=analysis.view, congestion_score=analysis.priority_score) for analysis in analyses]
+    static_allocations = allocate_green_times(
+        view_scores=[ViewScore(label=score.label, congestion_score=1.0) for score in view_scores],
+        cycle_time=cycle_time,
+        min_green=min_green,
+        max_green=max_green,
+    )
+    static_wait = _estimate_average_wait_seconds(analyses, static_allocations, cycle_time)
+    adaptive_wait = _estimate_average_wait_seconds(analyses, adaptive_allocations, cycle_time)
+    total_delay_reduction = _estimate_total_delay_reduction_per_cycle_seconds(
+        analyses,
+        static_allocations,
+        adaptive_allocations,
+        cycle_time,
+    )
+    return TimingComparison(
+        static_green_times_seconds=static_allocations,
+        estimated_average_wait_static_seconds=static_wait,
+        estimated_average_wait_adaptive_seconds=adaptive_wait,
+        estimated_average_wait_saved_seconds=round(max(static_wait - adaptive_wait, 0.0), 2),
+        estimated_total_delay_reduction_per_cycle_seconds=total_delay_reduction,
+    )
+
+
+def _estimate_average_wait_seconds(
+    analyses: list[ViewAnalysis],
+    allocations: dict[str, int],
+    cycle_time: int,
+) -> float:
+    total_load = sum(max(analysis.weighted_average_load, 0.0) for analysis in analyses)
+    if total_load <= 0:
+        return 0.0
+
+    total_wait = 0.0
+    for analysis in analyses:
+        red_time = max(cycle_time - allocations.get(analysis.view, 0), 0)
+        total_wait += max(analysis.weighted_average_load, 0.0) * red_time
+    return round(total_wait / total_load, 2)
+
+
+def _estimate_total_delay_reduction_per_cycle_seconds(
+    analyses: list[ViewAnalysis],
+    static_allocations: dict[str, int],
+    adaptive_allocations: dict[str, int],
+    cycle_time: int,
+) -> float:
+    reduction = 0.0
+    for analysis in analyses:
+        load = max(analysis.weighted_average_load, 0.0)
+        static_red = max(cycle_time - static_allocations.get(analysis.view, 0), 0)
+        adaptive_red = max(cycle_time - adaptive_allocations.get(analysis.view, 0), 0)
+        reduction += load * max(static_red - adaptive_red, 0)
+    return round(reduction, 2)
 
 
 def _finalize_annotated_video(raw_path: Path, final_path: Path) -> None:
